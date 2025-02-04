@@ -66,6 +66,20 @@ class DownloadRecord(Base):
     def __repr__(self):
         return "<DownloadRecord(id='%s', case_id='%s', case_name='%s', downloader='%s', downloader_institution='%s', datetime='%s, is_valid='%s')>" % (self.id, self.case_id, self.case_name, self.downloader, self.downloader_institution, self.datetime, self.is_valid)
     
+class HuaTuData(Base):
+    __tablename__ = 'huatu_data'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    case_id = Column(Integer, ForeignKey('case.id', ondelete='CASCADE'))
+    case_name = Column(String)
+    case = relationship("Case", backref="huatu_data")
+    year = Column(Integer)
+    views = Column(Integer)
+    downloads = Column(Integer)
+
+    def __repr__(self):
+        return "<HuaTuData(id='%s', case_id='%s', case_name='%s', year='%s', views='%s', downloads='%s')>" % (self.id, self.case_id, self.case_name, self.year, self.views, self.downloads)
+
 class Payment(Base):
     __tablename__ = 'payment'
 
@@ -81,6 +95,5 @@ class Payment(Base):
         return "<Payment(id='%s', case_id='%s', year='%s', views='%s', downloads='%s', payment='%s')>" % (self.id, self.case_id, self.year, self.views, self.downloads, self.payment)
     
 def init_db():
-    if not os.path.exists("PaymentCal.db"):
-        engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
-        Base.metadata.create_all(engine)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Base.metadata.create_all(engine)

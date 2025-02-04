@@ -3,10 +3,12 @@ from src.db.init_db import init_db
 
 def main():
     init_db()
-    readCaseList('data/test.xls')
+    # readCaseList('data/test.xls')
     # readCaseList('data/testCaseList.xlsx')
-    readBrowsingAndDownloadRecord_Tsinghua('data/testTsinghua.xls')
+    # readBrowsingAndDownloadRecord_Tsinghua('data/testTsinghua.xls')
     # readBrowsingAndDownloadRecord_Tsinghua('data/testTsinghua.xlsx')
+    readBrowsingAndDownloadData_HuaTu('data/testHuaTu.xls', 2024)
+    # readBrowsingAndDownloadData_HuaTu('data/testHuaTu.xlsx')
     # getTest()
     # cases = getSimilarCases('“双碳”政策下，宏宝莱的转型发展之路')
     # for case in cases:
