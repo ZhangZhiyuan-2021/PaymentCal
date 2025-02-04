@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 import datetime
 from fuzzywuzzy import process
 
-from src.db.init_db import CopyrightOwner, Case, BrowsingRecord, DownloadRecord
+from src.db.init_db import CopyrightOwner, Case, BrowsingRecord, DownloadRecord, HuaTuData, Payment
 
 def readCaseList(path):
     # 读取 xls 或 xlsx 文件
@@ -633,6 +633,47 @@ def exportDownloadRecord(path, case_name=None, downloader=None, downloader_insti
     df.to_excel(path, index=False)
 
     session.close()
+
+def readBrowsingAndDownloadData_HuaTu(path, year):
+    df = pd.read_excel(path)
+    data_dict_list = df.to_dict(orient='records')
+
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    missingInformationData = []
+    wrongData = []
+
+    for data_dict in data_dict_list:
+        if (not bool(data_dict['标题']) or pd.isna(data_dict['标题'])
+            or not bool(data_dict['邮件数']) or pd.isna(data_dict['邮件数'])
+            or not bool(data_dict['查看数']) or pd.isna(data_dict['查看数'])):
+            missingInformationData.append(data_dict)
+            continue
+
+        case = session.query(Case).filter_by(name=data_dict['标题']).first()
+        if not case:
+            print('案例不存在')
+            wrongData.append(data_dict)
+            continue
+
+        huatu_data = session.query(HuaTuData).filter_by(case_id=case.id, year=year).first()
+        if not huatu_data:
+            huatu_data = HuaTuData(case_id=case.id, 
+                                   case_name=case.name, 
+                                   year=year, 
+                                   views=int(data_dict['查看数']), 
+                                   downloads=int(data_dict['邮件数']))
+            session.add(huatu_data)
+        else:
+            huatu_data.views = data_dict['查看数']
+            huatu_data.downloads = data_dict['邮件数']
+        session.commit()
+
+    session.close()
+
+    return missingInformationData, wrongData
 
 def getTest():
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
