@@ -30,7 +30,7 @@ class Case(Base):
     submission_source = Column(String)
     contain_TN = Column(Boolean)
     is_adapted_from_text = Column(Boolean)
-    owner_id = Column(Integer, ForeignKey('copyright_owner.id', ondelete='SET NULL'))
+    owner_id = Column(Integer, ForeignKey('copyright_owner.id', ondelete='CASCADE'))
     owner = relationship("CopyrightOwner", backref="cases")
 
     def __repr__(self):
@@ -40,7 +40,7 @@ class BrowsingRecord(Base):
     __tablename__ = 'browsing_record'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    case_id = Column(Integer, ForeignKey('case.id', ondelete='SET NULL'))
+    case_id = Column(Integer, ForeignKey('case.id', ondelete='CASCADE'))
     case_name = Column(String)
     case = relationship("Case", backref="browsing_records")
     browser = Column(String)
@@ -55,7 +55,7 @@ class DownloadRecord(Base):
     __tablename__ = 'download_record'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    case_id = Column(Integer, ForeignKey('case.id', ondelete='SET NULL'))
+    case_id = Column(Integer, ForeignKey('case.id', ondelete='CASCADE'))
     case_name = Column(String)
     case = relationship("Case", backref="download_records")
     downloader = Column(String)
@@ -70,7 +70,7 @@ class Payment(Base):
     __tablename__ = 'payment'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    case_id = Column(Integer, ForeignKey('case.id', ondelete='SET NULL'))
+    case_id = Column(Integer, ForeignKey('case.id', ondelete='CASCADE'))
     case = relationship("Case", backref="payments")
     year = Column(Integer)
     views = Column(Integer)

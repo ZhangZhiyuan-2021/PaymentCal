@@ -47,11 +47,90 @@ def readCaseList(path):
                         is_adapted_from_text=True if data_dict['是否由文字案例改编'] == '是' else False,
                         owner_id=owner.id)
             session.add(case)
-            session.commit()
+        else:
+            case = updateCase(name=data_dict['案例标题'],
+                              type=data_dict['产品类型'], 
+                              create_time=datetime.datetime.strptime(data_dict['发布时间'], "%Y-%m-%d %H:%M:%S.%f"), 
+                              is_micro=True if data_dict['是否微案例'] == '是' else False,
+                              is_exclusive=True if data_dict['是否独家案例'] == '是' else False,
+                              batch=int(data_dict['案例批次']),
+                              submission_source=data_dict['投稿来源'],
+                              contain_TN=True if data_dict['是否含有教学说明'] == '是' else False,
+                              is_adapted_from_text=True if data_dict['是否由文字案例改编'] == '是' else False,
+                              owner_id=owner.id)
+        session.commit()
 
     session.close()
 
     return wrong_cases
+
+def getCopyrightOwner(name):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    owner = session.query(CopyrightOwner).filter_by(name=name).first()
+    if not owner:
+        print('版权方不存在')
+        return None
+
+    session.close()
+
+    return owner
+
+def getAllCopyrightOwners():
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    owners = session.query(CopyrightOwner).all()
+
+    session.close()
+
+    return owners
+
+def updateCopyrightOwner(name, new_name):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    owner = session.query(CopyrightOwner).filter_by(name=name).first()
+    if not owner:
+        print('版权方不存在')
+        return None
+
+    owner.name = new_name
+
+    session.commit()
+    session.close()
+
+    return owner
+
+def deleteCopyrightOwner(name):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    owner = session.query(CopyrightOwner).filter_by(name=name).first()
+    if not owner:
+        print('版权方不存在')
+        return None
+
+    session.delete(owner)
+    session.commit()
+    session.close()
+
+    return owner
+
+def deleteAllCopyrightOwners():
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    for owner in session.query(Case).all():
+        session.delete(owner)
+    session.commit()
+    session.close()
 
 def getCase(name):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
@@ -85,6 +164,17 @@ def getSimilarCases(name):
     session.close()
 
     return similar_cases
+
+def getAllCases():
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    cases = session.query(Case).all()
+
+    session.close()
+
+    return cases
 
 def updateCase(name, alias=None, type=None, create_time=None, is_micro=None, is_exclusive=None, batch=None, submission_source=None, contain_TN=None, is_adapted_from_text=None, owner_id=None):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
@@ -151,6 +241,32 @@ def deleteAllCases():
     for case in session.query(Case).all():
         session.delete(case)
     session.commit()
+    session.close()
+
+def exportCaseList(path):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    cases = session.query(Case).all()
+    case_list = []
+    for case in cases:
+        case_dict = {}
+        case_dict['案例标题'] = case.name
+        case_dict['产品类型'] = case.type
+        case_dict['发布时间'] = case.create_time
+        case_dict['是否微案例'] = '是' if case.is_micro else '否'
+        case_dict['是否独家案例'] = '是' if case.is_exclusive else '否'
+        case_dict['案例批次'] = case.batch
+        case_dict['投稿来源'] = case.submission_source
+        case_dict['是否含有教学说明'] = '是' if case.contain_TN else '否'
+        case_dict['是否由文字案例改编'] = '是' if case.is_adapted_from_text else '否'
+        case_dict['案例版权'] = session.query(Case).filter_by(id=case.owner_id).first().name
+        case_list.append(case_dict)
+
+    df = pd.DataFrame(case_list)
+    df.to_excel(path, index=False)
+
     session.close()
 
 def readBrowsingAndDownloadRecord_Tsinghua(path):
@@ -306,6 +422,66 @@ def readBrowsingAndDownloadRecord_Tsinghua(path):
 
     return missingInformationBrowsingRecords, missingInformationDownloadRecords, wrongBrowsingRecords, wrongDownloadRecords
 
+def getBrowsingRecord(case_name, browser=None, browser_institution=None, datetime=None, is_valid=None):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    browsing_records = session.query(BrowsingRecord).filter_by(case_name=case_name).all()
+    if not browsing_records:
+        print('浏览记录不存在')
+        return None
+
+    if browser:
+        browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.browser == browser]
+    if browser_institution:
+        browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.browser_institution == browser_institution]
+    if datetime:
+        browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.datetime == datetime]
+    if is_valid:
+        browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.is_valid == is_valid]
+
+    session.close()
+
+    return browsing_records
+
+def getAllBrowsingRecords():
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    browsing_records = session.query(BrowsingRecord).all()
+
+    session.close()
+
+    return browsing_records
+
+def deleteBrowsingRecord(case_name, browser=None, browser_institution=None, datetime=None, is_valid=None):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    browsing_records = session.query(BrowsingRecord).filter_by(case_name=case_name).all()
+    if not browsing_records:
+        print('浏览记录不存在')
+        return None
+
+    if browser:
+        browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.browser == browser]
+    if browser_institution:
+        browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.browser_institution == browser_institution]
+    if datetime:
+        browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.datetime == datetime]
+    if is_valid:
+        browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.is_valid == is_valid]
+
+    for browsing_record in browsing_records:
+        session.delete(browsing_record)
+    session.commit()
+    session.close()
+
+    return browsing_records
+
 def deleteAllBrowsingRecords():
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
     Session = sessionmaker(bind=engine)
@@ -315,6 +491,66 @@ def deleteAllBrowsingRecords():
         session.delete(browsing_record)
     session.commit()
     session.close()
+
+def getDownloadRecord(case_name, downloader=None, downloader_institution=None, datetime=None, is_valid=None):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    download_records = session.query(DownloadRecord).filter_by(case_name=case_name).all()
+    if not download_records:
+        print('下载记录不存在')
+        return None
+
+    if downloader:
+        download_records = [download_record for download_record in download_records if download_record.downloader == downloader]
+    if downloader_institution:
+        download_records = [download_record for download_record in download_records if download_record.downloader_institution == downloader_institution]
+    if datetime:
+        download_records = [download_record for download_record in download_records if download_record.datetime == datetime]
+    if is_valid:
+        download_records = [download_record for download_record in download_records if download_record.is_valid == is_valid]
+
+    session.close()
+
+    return download_records
+
+def getAllDownloadRecords():
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    download_records = session.query(DownloadRecord).all()
+
+    session.close()
+
+    return download_records
+
+def deleteDownloadRecord(case_name, downloader=None, downloader_institution=None, datetime=None, is_valid=None):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    download_records = session.query(DownloadRecord).filter_by(case_name=case_name).all()
+    if not download_records:
+        print('下载记录不存在')
+        return None
+
+    if downloader:
+        download_records = [download_record for download_record in download_records if download_record.downloader == downloader]
+    if downloader_institution:
+        download_records = [download_record for download_record in download_records if download_record.downloader_institution == downloader_institution]
+    if datetime:
+        download_records = [download_record for download_record in download_records if download_record.datetime == datetime]
+    if is_valid:
+        download_records = [download_record for download_record in download_records if download_record.is_valid == is_valid]
+
+    for download_record in download_records:
+        session.delete(download_record)
+    session.commit()
+    session.close()
+
+    return download_records
 
 def deleteAllDownloadRecords():
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
@@ -326,9 +562,77 @@ def deleteAllDownloadRecords():
     session.commit()
     session.close()
 
-def deleteAllBrowsingAndDownloadRecords():
-    deleteAllBrowsingRecords()
-    deleteAllDownloadRecords()
+def exportBrowsingRecord(path, case_name=None, browser=None, browser_institution=None, datetime=None, is_valid=None):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    browsing_records = session.query(BrowsingRecord).all()
+    if not browsing_records:
+        print('浏览记录不存在')
+        return None
+
+    if case_name:
+        browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.case_name == case_name]
+    if browser:
+        browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.browser == browser]
+    if browser_institution:
+        browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.browser_institution == browser_institution]
+    if datetime:
+        browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.datetime == datetime]
+    if is_valid:
+        browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.is_valid == is_valid]
+
+    browsing_record_list = []
+    for browsing_record in browsing_records:
+        browsing_record_dict = {}
+        browsing_record_dict['案例名称'] = browsing_record.case_name
+        browsing_record_dict['浏览人账号'] = browsing_record.browser
+        browsing_record_dict['浏览人所在院校'] = browsing_record.browser_institution
+        browsing_record_dict['浏览时间'] = browsing_record.datetime
+        browsing_record_dict['是否有效'] = '是' if browsing_record.is_valid else '否'
+        browsing_record_list.append(browsing_record_dict)
+
+    df = pd.DataFrame(browsing_record_list)
+    df.to_excel(path, index=False)
+
+    session.close()
+
+def exportDownloadRecord(path, case_name=None, downloader=None, downloader_institution=None, datetime=None, is_valid=None):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    download_records = session.query(DownloadRecord).all()
+    if not download_records:
+        print('下载记录不存在')
+        return None
+
+    if case_name:
+        download_records = [download_record for download_record in download_records if download_record.case_name == case_name]
+    if downloader:
+        download_records = [download_record for download_record in download_records if download_record.downloader == downloader]
+    if downloader_institution:
+        download_records = [download_record for download_record in download_records if download_record.downloader_institution == downloader_institution]
+    if datetime:
+        download_records = [download_record for download_record in download_records if download_record.datetime == datetime]
+    if is_valid:
+        download_records = [download_record for download_record in download_records if download_record.is_valid == is_valid]
+
+    download_record_list = []
+    for download_record in download_records:
+        download_record_dict = {}
+        download_record_dict['案例名称'] = download_record.case_name
+        download_record_dict['下载人账号'] = download_record.downloader
+        download_record_dict['下载人所在院校'] = download_record.downloader_institution
+        download_record_dict['下载时间'] = download_record.datetime
+        download_record_dict['是否有效'] = '是' if download_record.is_valid else '否'
+        download_record_list.append(download_record_dict)
+
+    df = pd.DataFrame(download_record_list)
+    df.to_excel(path, index=False)
+
+    session.close()
 
 def getTest():
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
