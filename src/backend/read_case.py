@@ -254,14 +254,14 @@ def exportCaseList(path):
         case_dict = {}
         case_dict['案例标题'] = case.name
         case_dict['产品类型'] = case.type
-        case_dict['发布时间'] = case.create_time
+        case_dict['发布时间'] = case.create_time.strftime("%Y-%m-%d %H:%M:%S.%f")
         case_dict['是否微案例'] = '是' if case.is_micro else '否'
         case_dict['是否独家案例'] = '是' if case.is_exclusive else '否'
         case_dict['案例批次'] = case.batch
         case_dict['投稿来源'] = case.submission_source
         case_dict['是否含有教学说明'] = '是' if case.contain_TN else '否'
         case_dict['是否由文字案例改编'] = '是' if case.is_adapted_from_text else '否'
-        case_dict['案例版权'] = session.query(Case).filter_by(id=case.owner_id).first().name
+        case_dict['案例版权'] = case.owner.name
         case_list.append(case_dict)
 
     df = pd.DataFrame(case_list)
@@ -562,75 +562,40 @@ def deleteAllDownloadRecords():
     session.commit()
     session.close()
 
-def exportBrowsingRecord(path, case_name=None, browser=None, browser_institution=None, datetime=None, is_valid=None):
+def exportBrowsingAndDownloadRecord(path):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
     Session = sessionmaker(bind=engine)
     session = Session()
 
     browsing_records = session.query(BrowsingRecord).all()
-    if not browsing_records:
-        print('浏览记录不存在')
-        return None
-
-    if case_name:
-        browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.case_name == case_name]
-    if browser:
-        browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.browser == browser]
-    if browser_institution:
-        browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.browser_institution == browser_institution]
-    if datetime:
-        browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.datetime == datetime]
-    if is_valid:
-        browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.is_valid == is_valid]
-
+    # 每 50000 个记录为一个 sheet
     browsing_record_list = []
     for browsing_record in browsing_records:
         browsing_record_dict = {}
         browsing_record_dict['案例名称'] = browsing_record.case_name
         browsing_record_dict['浏览人账号'] = browsing_record.browser
         browsing_record_dict['浏览人所在院校'] = browsing_record.browser_institution
-        browsing_record_dict['浏览时间'] = browsing_record.datetime
-        browsing_record_dict['是否有效'] = '是' if browsing_record.is_valid else '否'
+        browsing_record_dict['浏览时间'] = browsing_record.datetime.strftime("%Y-%m-%d %H:%M:%S")
         browsing_record_list.append(browsing_record_dict)
-
-    df = pd.DataFrame(browsing_record_list)
-    df.to_excel(path, index=False)
-
-    session.close()
-
-def exportDownloadRecord(path, case_name=None, downloader=None, downloader_institution=None, datetime=None, is_valid=None):
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
-    Session = sessionmaker(bind=engine)
-    session = Session()
-
+        
     download_records = session.query(DownloadRecord).all()
-    if not download_records:
-        print('下载记录不存在')
-        return None
-
-    if case_name:
-        download_records = [download_record for download_record in download_records if download_record.case_name == case_name]
-    if downloader:
-        download_records = [download_record for download_record in download_records if download_record.downloader == downloader]
-    if downloader_institution:
-        download_records = [download_record for download_record in download_records if download_record.downloader_institution == downloader_institution]
-    if datetime:
-        download_records = [download_record for download_record in download_records if download_record.datetime == datetime]
-    if is_valid:
-        download_records = [download_record for download_record in download_records if download_record.is_valid == is_valid]
-
+    # 每 50000 个记录为一个 sheet
     download_record_list = []
     for download_record in download_records:
         download_record_dict = {}
         download_record_dict['案例名称'] = download_record.case_name
         download_record_dict['下载人账号'] = download_record.downloader
         download_record_dict['下载人所在院校'] = download_record.downloader_institution
-        download_record_dict['下载时间'] = download_record.datetime
-        download_record_dict['是否有效'] = '是' if download_record.is_valid else '否'
+        download_record_dict['下载时间'] = download_record.datetime.strftime("%Y-%m-%d %H:%M:%S")
         download_record_list.append(download_record_dict)
 
-    df = pd.DataFrame(download_record_list)
-    df.to_excel(path, index=False)
+    with pd.ExcelWriter(path) as writer:
+        for i in range(0, len(browsing_record_list), 50000):
+            df = pd.DataFrame(browsing_record_list[i:i+50000])
+            df.to_excel(writer, sheet_name='浏览记录' + str(i // 50000 + 1), index=False)
+        for i in range(0, len(download_record_list), 50000):
+            df = pd.DataFrame(download_record_list[i:i+50000])
+            df.to_excel(writer, sheet_name='下载记录' + str(i // 50000 + 1), index=False)
 
     session.close()
 
@@ -675,14 +640,120 @@ def readBrowsingAndDownloadData_HuaTu(path, year):
 
     return missingInformationData, wrongData
 
-def getTest():
+def getHuaTuData(case_name, year, views=None, downloads=None):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
     Session = sessionmaker(bind=engine)
     session = Session()
-    cases = session.query(BrowsingRecord).filter_by(case_name='北方电机公司').all()
-    print('--------------------------------')
-    print('Browsing Records:', len(cases))
-    for case in cases:
-        print('--------------------------------')
-        print(case)
+
+    huatu_data = session.query(HuaTuData).filter_by(case_name=case_name, year=year).first()
+    if not huatu_data:
+        print('数据不存在')
+        return None
+
+    if views:
+        huatu_data = [huatu_data for huatu_data in huatu_data if huatu_data.views == views]
+    if downloads:
+        huatu_data = [huatu_data for huatu_data in huatu_data if huatu_data.downloads == downloads]
+
+    session.close()
+
+    return huatu_data
+
+def getAllHuaTuData():
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    huatu_data = session.query(HuaTuData).all()
+
+    session.close()
+
+    return huatu_data
+
+def updateHuaTuData(case_name, year, views=None, downloads=None):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    huatu_data = session.query(HuaTuData).filter_by(case_name=case_name, year=year).first()
+    if not huatu_data:
+        print('数据不存在')
+        return None
+
+    if views:
+        huatu_data.views = views
+    if downloads:
+        huatu_data.downloads = downloads
+
+    session.commit()
+    session.close()
+
+    return huatu_data
+
+def deleteHuaTuData(case_name, year, views=None, downloads=None):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    huatu_data = session.query(HuaTuData).filter_by(case_name=case_name, year=year).first()
+    if not huatu_data:
+        print('数据不存在')
+        return None
+
+    if views:
+        huatu_data = [huatu_data for huatu_data in huatu_data if huatu_data.views == views]
+    if downloads:
+        huatu_data = [huatu_data for huatu_data in huatu_data if huatu_data.downloads == downloads]
+
+    for huatu_data in huatu_data:
+        session.delete(huatu_data)
+    session.commit()
+    session.close()
+
+    return huatu_data
+
+def deleteAllHuaTuData():
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    for huatu_data in session.query(HuaTuData).all():
+        session.delete(huatu_data)
+    session.commit()
+    session.close()
+
+def exportHuaTuData(path, year=None):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    if year:
+        huatu_data = session.query(HuaTuData).filter_by(year=year).all()
+        huatu_data_list = []
+        for huatu_data in huatu_data:
+            huatu_data_dict = {}
+            huatu_data_dict['标题'] = huatu_data.case_name
+            huatu_data_dict['查看数'] = huatu_data.views
+            huatu_data_dict['邮件数'] = huatu_data.downloads
+            huatu_data_list.append(huatu_data_dict)
+
+        df = pd.DataFrame(huatu_data_list)
+        df.to_excel(path, index=False)
+    else:
+        huatu_data_list = {}
+        for year in sorted([x[0] for x in session.query(HuaTuData.year).distinct()], reverse=True):
+            huatu_data = session.query(HuaTuData).filter_by(year=year).all()
+            huatu_data_list[year] = []
+            for huatu_data in huatu_data:
+                huatu_data_dict = {}
+                huatu_data_dict['标题'] = huatu_data.case_name
+                huatu_data_dict['查看数'] = huatu_data.views
+                huatu_data_dict['邮件数'] = huatu_data.downloads
+                huatu_data_list[year].append(huatu_data_dict)
+
+        with pd.ExcelWriter(path) as writer:
+            for year in huatu_data_list:
+                df = pd.DataFrame(huatu_data_list[year])
+                df.to_excel(writer, sheet_name=str(year), index=False)
+
     session.close()
