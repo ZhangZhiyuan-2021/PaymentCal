@@ -48,7 +48,7 @@ def readCaseList(path):
             session.add(owner)
             owner_cache[owner_name] = owner
 
-        case_title = data_dict['案例标题']
+        case_title = data_dict['案例标题'].replace(' ', '').replace('　', '')
         submission_number = data_dict['投稿编号']
 
         # 先按案例标题查找，如不存在再按投稿编号查找
@@ -62,16 +62,10 @@ def readCaseList(path):
                 cases_by_name.pop(case.name, None)
                 # 已存在的案例：更新信息
                 # 更新 alias（别名）记录
-                if not case.alias:
-                    case.alias = json.dumps([case_title])
-                else:
-                    try:
-                        alias_list = json.loads(case.alias)
-                    except Exception:
-                        alias_list = []
-                    if case_title not in alias_list:
-                        alias_list.append(case_title)
-                        case.alias = json.dumps(alias_list)
+                alias_list = json.loads(case.alias)
+                if case_title not in alias_list:
+                    alias_list.append(case_title)
+                    case.alias = json.dumps(alias_list)
                 # 更新其他字段
                 case.name = case_title
                 case.type = data_dict.get('产品类型')
@@ -87,11 +81,6 @@ def readCaseList(path):
                         wrong_cases.append(data_dict)
                         continue
                 case.is_micro = True if data_dict.get('是否微案例') == '是' else False
-                case.is_exclusive = True if data_dict.get('是否独家案例') == '是' else False
-                try:
-                    case.batch = int(data_dict.get('案例批次', 0))
-                except:
-                    case.batch = 0
                 case.submission_source = data_dict.get('投稿来源')
                 case.contain_TN = True if data_dict.get('是否含有教学说明') == '是' else False
                 case.is_adapted_from_text = True if data_dict.get('是否由文字案例改编') == '是' else False
@@ -112,13 +101,14 @@ def readCaseList(path):
                         continue
                 case = Case(
                     name=case_title,
+                    alias=json.dumps([case_title]),
                     type=data_dict.get('产品类型'),
                     submission_number=submission_number,
                     release_time=release_time,
                     create_time=create_time,
                     is_micro=True if data_dict.get('是否微案例') == '是' else False,
-                    is_exclusive=True if data_dict.get('是否独家案例') == '是' else False,
-                    batch=int(data_dict.get('案例批次', 0)),
+                    is_exclusive = True, # 默认全为独家案例，从人大案例列表中获取非独家信息
+                    batch = 0,
                     submission_source=data_dict.get('投稿来源'),
                     contain_TN=True if data_dict.get('是否含有教学说明') == '是' else False,
                     is_adapted_from_text=True if data_dict.get('是否由文字案例改编') == '是' else False,
@@ -133,79 +123,63 @@ def readCaseList(path):
     session.close()
     return wrong_cases
 
-# def readCaseList(path):
-#     # 读取 xls 或 xlsx 文件
-#     df = pd.read_excel(path)
-#     data_dict_list = [x for x in df.to_dict(orient='records') if x['案例状态'] == '已入库']
+def readCaseExclusiveAndBatch(path, owner_name, batch):
+    df = pd.read_excel(path)
+    data_dict_list = df.to_dict(orient='records')
+    for attr in data_dict_list[0]:
+        if '标题' in attr:
+            title = attr
+            break
+    missingInformationCases = []
+    wrong_cases = []
 
-#     wrong_cases = []
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
 
-#     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
-#     Session = sessionmaker(bind=engine)
-#     session = Session()
+    all_owners = session.query(CopyrightOwner).all()
+    owner_cache = {owner.name: owner for owner in all_owners if owner.name} # TODO 整体对案例版权进行一次查询
+    all_owner_cases = [] # TODO 等待回复：版权以案例文档列表为准，还是以批次案例为准
+    if '中国人民大学' in owner_name:
+        is_exclusive = False
+        for owner in owner_cache:
+            if '中国人民大学' in owner:
+                all_owner_cases.extend(owner_cache[owner].cases)
+    elif '浙江大学' in owner_name:
+        is_exclusive = True
+        for owner in owner_cache:
+            if '浙江大学' in owner:
+                all_owner_cases.extend(owner_cache[owner].cases)
 
-#     for data_dict in data_dict_list:
-#         if (not bool(data_dict['案例标题']) or pd.isna(data_dict['案例标题'])
-#             or not bool(data_dict['投稿编号']) or pd.isna(data_dict['投稿编号'])
-#             or not bool(data_dict['案例版权']) or pd.isna(data_dict['案例版权'])
-#             or not bool(data_dict['发布时间']) or pd.isna(data_dict['发布时间'])):
-#             print('案例标题、投稿编号、案例版权、发布时间不能为空')
-#             wrong_cases.append(data_dict)
-#             continue
+    cases_by_name = {case.name: case for case in all_owner_cases if case.name}
 
-#         owner = session.query(CopyrightOwner).filter_by(name=data_dict['案例版权']).first()
-#         if not owner:
-#             owner = CopyrightOwner(name=data_dict['案例版权'])
-#             session.add(owner)
-#             session.commit()
+    for data_dict in data_dict_list:
+        if not data_dict.get(title) or pd.isna(data_dict.get(title)):
+            print('案例标题不能为空')
+            missingInformationCases.append(data_dict)
+            continue
 
-#         case = session.query(Case).filter_by(name=data_dict['案例标题']).first()
-#         owner = session.query(CopyrightOwner).filter_by(name=data_dict['案例版权']).first()
-#         if not case:
-#             case = session.query(Case).filter_by(submission_number=data_dict['投稿编号']).first()
-#             if case:
-#                 if not case.alias:
-#                     case.alias = json.dumps([data_dict['案例标题']])
-#                 else:
-#                     alias_list = json.loads(case.alias)
-#                     alias_list.append(data_dict['案例标题'])
-#                     case.alias = json.dumps(alias_list)
-#                 case.name = data_dict['案例标题']
-#                 case.type = data_dict['产品类型']
-#                 case.release_time = datetime.datetime.strptime(data_dict['发布时间'], "%Y-%m-%d %H:%M:%S.%f")
-#                 case.is_micro = True if data_dict['是否微案例'] == '是' else False
-#                 case.is_exclusive = True if data_dict['是否独家案例'] == '是' else False
-#                 case.batch = int(data_dict['案例批次'])
-#                 case.submission_source = data_dict['投稿来源']
-#                 case.contain_TN = True if data_dict['是否含有教学说明'] == '是' else False
-#                 case.is_adapted_from_text = True if data_dict['是否由文字案例改编'] == '是' else False
-#                 case.owner_name = owner.name
-#                 session.commit()
-#             else:
-#                 case = Case(name=data_dict['案例标题'], 
-#                             type=data_dict['产品类型'], 
-#                             submission_number=data_dict['投稿编号'],
-#                             release_time=datetime.datetime.strptime(data_dict['发布时间'], "%Y-%m-%d %H:%M:%S.%f"), 
-#                             is_micro=True if data_dict['是否微案例'] == '是' else False,
-#                             is_exclusive=True if data_dict['是否独家案例'] == '是' else False,
-#                             batch=int(data_dict['案例批次']),
-#                             submission_source=data_dict['投稿来源'],
-#                             contain_TN=True if data_dict['是否含有教学说明'] == '是' else False,
-#                             is_adapted_from_text=True if data_dict['是否由文字案例改编'] == '是' else False,
-#                             owner_name=owner.name)
-#                 session.add(case)
-#                 session.commit()
+        case_title = data_dict[title].replace(' ', '').replace('　', '')
 
-#     session.close()
+        case = cases_by_name.get(case_title)
+        if not case:
+            print('案例不存在', case_title)
+            wrong_cases.append(data_dict)
+            continue
 
-#     return wrong_cases
+        case.is_exclusive = is_exclusive
+        case.batch = batch
+
+    session.commit()
+    session.close()
+    return missingInformationCases, wrong_cases
 
 def getCopyrightOwner(name):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
     Session = sessionmaker(bind=engine)
     session = Session()
 
-    owner = session.query(CopyrightOwner).filter_by(name=name).first()
+    owner = session.query(CopyrightOwner).filter_by(name=name.replace(' ', '').replace('　', '')).first()
     if not owner:
         print('版权方不存在')
         return None
@@ -230,7 +204,7 @@ def updateCopyrightOwner(name, new_name):
     Session = sessionmaker(bind=engine)
     session = Session()
 
-    owner = session.query(CopyrightOwner).filter_by(name=name).first()
+    owner = session.query(CopyrightOwner).filter_by(name=name.replace(' ', '').replace('　', '')).first()
     if not owner:
         print('版权方不存在')
         return None
@@ -247,7 +221,7 @@ def deleteCopyrightOwner(name):
     Session = sessionmaker(bind=engine)
     session = Session()
 
-    owner = session.query(CopyrightOwner).filter_by(name=name).first()
+    owner = session.query(CopyrightOwner).filter_by(name=name.replace(' ', '').replace('　', '')).first()
     if not owner:
         print('版权方不存在')
         return None
@@ -273,7 +247,7 @@ def getCase(name):
     Session = sessionmaker(bind=engine)
     session = Session()
 
-    case = session.query(Case).filter_by(name=name).first()
+    case = session.query(Case).filter_by(name=name.replace(' ', '').replace('　', '')).first()
     if not case:
         print('案例不存在', name)
         return None
@@ -291,7 +265,7 @@ def getSimilarCases(name):
     # 直接搜索 Case.name 会给出一个长度为 1 的名称元组的列表
     cases = session.query(Case).all()
     case_names = [case.name for case in cases]
-    similar_case_names = process.extract(name, case_names, limit=10)
+    similar_case_names = process.extract(name.replace(' ', '').replace('　', ''), case_names, limit=10)
     similar_cases = []
     for similar_case_name in similar_case_names:
         similar_case = session.query(Case).filter_by(name=similar_case_name[0]).first()
@@ -317,17 +291,16 @@ def updateCase(name, alias=None, submission_number=None, type=None, release_time
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    name = name.replace(' ', '').replace('　', '')
     case = session.query(Case).filter_by(name=name).first()
     if not case:
         print('案例不存在', name)
         return None
 
     if alias:
-        if not case.alias:
-            case.alias = json.dumps([alias])
-        else:
-            alias_list = json.loads(case.alias)
-            alias_list.append(alias)
+        alias_list = json.loads(case.alias)
+        if alias not in alias_list:
+            alias_list.append(alias.replace(' ', '').replace('　', ''))
             case.alias = json.dumps(alias_list)
     if type:
         case.type = type
@@ -361,11 +334,37 @@ def updateCase(name, alias=None, submission_number=None, type=None, release_time
 
     return case
 
+def deleteAlias(name, alias):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    name = name.replace(' ', '').replace('　', '')
+    case = session.query(Case).filter_by(name=name).first()
+    if not case:
+        print('案例不存在', name)
+        return None
+
+    alias = alias.replace(' ', '').replace('　', '')
+    alias_list = json.loads(case.alias)
+    if alias not in alias_list:
+        print('别名不存在')
+        return None
+
+    alias_list.remove(alias)
+    case.alias = json.dumps(alias_list)
+
+    session.commit()
+    session.close()
+
+    return case
+
 def deleteCase(name):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    name = name.replace(' ', '').replace('　', '')
     case = session.query(Case).filter_by(name=name).first()
     if not case:
         print('案例不存在', name)
@@ -457,6 +456,7 @@ def readBrowsingAndDownloadRecord_Tsinghua(path):
                 missingInformationBrowsingRecords.append(data_dict)
                 continue
 
+            data_dict['案例名称'] = data_dict['案例名称'].replace(' ', '').replace('　', '')
             # 直接从加载的案例字典中查找案例
             case = case_dict.get(data_dict['案例名称'])
             if not case:
@@ -510,6 +510,7 @@ def readBrowsingAndDownloadRecord_Tsinghua(path):
                 missingInformationDownloadRecords.append(data_dict)
                 continue
 
+            data_dict['案例名称'] = data_dict['案例名称'].replace(' ', '').replace('　', '')
             case = case_dict.get(data_dict['案例名称'])
             if not case:
                 print('案例不存在', data_dict['案例名称'])
@@ -617,6 +618,7 @@ def getBrowsingRecord(case_name, browser=None, browser_institution=None, datetim
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    case_name = case_name.replace(' ', '').replace('　', '')
     browsing_records = session.query(BrowsingRecord).filter_by(case_name=case_name).all()
     if not browsing_records:
         print('浏览记录不存在')
@@ -651,6 +653,7 @@ def deleteBrowsingRecord(case_name, browser=None, browser_institution=None, date
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    case_name = case_name.replace(' ', '').replace('　', '')
     browsing_records = session.query(BrowsingRecord).filter_by(case_name=case_name).all()
     if not browsing_records:
         print('浏览记录不存在')
@@ -687,6 +690,7 @@ def getDownloadRecord(case_name, downloader=None, downloader_institution=None, d
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    case_name = case_name.replace(' ', '').replace('　', '')
     download_records = session.query(DownloadRecord).filter_by(case_name=case_name).all()
     if not download_records:
         print('下载记录不存在')
@@ -721,6 +725,7 @@ def deleteDownloadRecord(case_name, downloader=None, downloader_institution=None
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    case_name = case_name.replace(' ', '').replace('　', '')
     download_records = session.query(DownloadRecord).filter_by(case_name=case_name).all()
     if not download_records:
         print('下载记录不存在')
@@ -821,6 +826,7 @@ def readBrowsingAndDownloadData_HuaTu(path, year):
             missingInformationData.append(data_dict)
             continue
 
+        data_dict['标题'] = data_dict['标题'].replace(' ', '').replace('　', '')
         case = cases_dict.get(data_dict['标题'])
         if not case:
             print('案例不存在:', data_dict['标题'])
@@ -849,52 +855,12 @@ def readBrowsingAndDownloadData_HuaTu(path, year):
 
     return missingInformationData, wrongData
 
-# def readBrowsingAndDownloadData_HuaTu(path, year):
-#     df = pd.read_excel(path)
-#     data_dict_list = df.to_dict(orient='records')
-
-#     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
-#     Session = sessionmaker(bind=engine)
-#     session = Session()
-
-#     missingInformationData = []
-#     wrongData = []
-
-#     for data_dict in data_dict_list:
-#         if (not bool(data_dict['标题']) or pd.isna(data_dict['标题'])
-#             or not bool(data_dict['邮件数']) or pd.isna(data_dict['邮件数'])
-#             or not bool(data_dict['查看数']) or pd.isna(data_dict['查看数'])):
-#             missingInformationData.append(data_dict)
-#             continue
-
-#         case = session.query(Case).filter_by(name=data_dict['标题']).first()
-
-#         if not case:
-#             print('案例不存在')
-#             wrongData.append(data_dict)
-#             continue
-
-#         huatu_data = session.query(HuaTuData).filter_by(case_name=case.name, year=year).first()
-#         if not huatu_data:
-#             huatu_data = HuaTuData(case_name=case.name, 
-#                                    year=year, 
-#                                    views=int(data_dict['查看数']), 
-#                                    downloads=int(data_dict['邮件数']))
-#             session.add(huatu_data)
-#         else:
-#             huatu_data.views = data_dict['查看数']
-#             huatu_data.downloads = data_dict['邮件数']
-#         session.commit()
-
-#     session.close()
-
-#     return missingInformationData, wrongData
-
 def addBrowsingAndDownloadData_HuaTu(case_name, year, views, downloads):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    case_name = case_name.replace(' ', '').replace('　', '')
     case = session.query(Case).filter_by(name=case_name).first()
     if not case:
         print('案例不存在', case_name)
@@ -932,6 +898,7 @@ def getHuaTuData(case_name, year, views=None, downloads=None):
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    case_name = case_name.replace(' ', '').replace('　', '')
     huatu_data = session.query(HuaTuData).filter_by(case_name=case_name, year=year).first()
     if not huatu_data:
         print('数据不存在')
@@ -962,6 +929,7 @@ def updateHuaTuData(case_name, year, views=None, downloads=None):
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    case_name = case_name.replace(' ', '').replace('　', '')
     huatu_data = session.query(HuaTuData).filter_by(case_name=case_name, year=year).first()
     if not huatu_data:
         print('数据不存在')
@@ -982,6 +950,7 @@ def deleteHuaTuData(case_name, year, views=None, downloads=None):
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    case_name = case_name.replace(' ', '').replace('　', '')
     huatu_data = session.query(HuaTuData).filter_by(case_name=case_name, year=year).first()
     if not huatu_data:
         print('数据不存在')
