@@ -12,7 +12,7 @@ import numpy as np
 
 from caselist import CaseListModel, CaseItemDelegate, get_case_list_widget
 from importDataWindow import ImportDataWindow
-from utils import load_data
+from utils import load_data, set_button_style
 
 class MatplotlibCanvas(FigureCanvas):
     def __init__(self, parent=None):
@@ -26,7 +26,7 @@ class MatplotlibCanvas(FigureCanvas):
     def plot_example(self):
         years = np.array([2017, 2018, 2019, 2020, 2021])
         values = np.array([140, 160, 155, 158, 165])
-        self.ax.plot(years, values, marker='', linewidth=2, linestyle='-', color='purple', alpha=0.6)
+        self.ax.plot(years, values, marker='', linewidth=2, linestyle='-', color='#9b69ff', alpha=0.6)
         self.ax.set_title("案例A稿酬历史发放记录")
         self.ax.set_xlabel("年份", fontsize=18)
         self.ax.set_ylabel("金额", fontsize=18)
@@ -49,7 +49,7 @@ class MainWindow(QWidget):
     def initUI(self):
         self.setWindowTitle("稿酬计算小程序")
         self.setGeometry(400, 400, 1800, 600)
-        self.init_shadow_effect()
+        # self.init_shadow_effect()
 
         base_layout = QHBoxLayout()
         case_layout = QVBoxLayout()
@@ -73,13 +73,13 @@ class MainWindow(QWidget):
         button_base_layout.addWidget(buttonlist_container)
         
         # 创建阴影效果
-        button_container.setAttribute(Qt.WA_TranslucentBackground)
-        button_container.setGraphicsEffect(self.shadow_effect)
-        
+        # button_container.setAttribute(Qt.WA_TranslucentBackground)
+        # button_container.setGraphicsEffect(self.shadow_effect)
         
         list_container = QWidget()
         list_container.setStyleSheet("background-color: white;")
         list_layout = QVBoxLayout(list_container)       # 案例列表
+        list_layout.setContentsMargins(20, 20, 20, 20)
   
         
         chart_container = QWidget()
@@ -89,7 +89,7 @@ class MainWindow(QWidget):
         
         # 左侧按钮
         self.import_button = QPushButton("导入数据")
-        self.set_button_style(self.import_button)
+        set_button_style(self.import_button)
         self.import_button.clicked.connect(self.open_import_window)
         
         # 分界线
@@ -99,15 +99,15 @@ class MainWindow(QWidget):
         line.setStyleSheet("color: #e0e0e0;")
         
         self.royalty_button = QPushButton("导入历年版税")
-        self.set_button_style(self.royalty_button)
+        set_button_style(self.royalty_button)
         self.royalty_button.clicked.connect(self.import_royalty)
         
         self.migrate_button = QPushButton("导入软件数据")
-        self.set_button_style(self.migrate_button)
+        set_button_style(self.migrate_button)
         self.migrate_button.clicked.connect(self.import_migration_data)
         
         self.export_button = QPushButton("导出数据")
-        self.set_button_style(self.export_button)
+        set_button_style(self.export_button)
         self.export_button.clicked.connect(self.export_data)
         
         button_layout.addWidget(self.import_button)
@@ -140,6 +140,11 @@ class MainWindow(QWidget):
         # self.case_list_view.model().layoutChanged.emit()
         # self.case_list_view.update()
         self.case_list_model, self.case_list_view = get_case_list_widget(cases)
+        self.case_list_view.setStyleSheet("""
+            border: none;
+            border-right: 1px solid #dbdbdb;
+            padding-right: 20px;
+        """)
         self.case_list_view.clicked.connect(self.on_case_clicked)
         
         list_layout.addWidget(self.case_list_view, 2)
@@ -164,33 +169,15 @@ class MainWindow(QWidget):
         self.setObjectName("MainWindow")
         self.setStyleSheet('''
             #MainWindow {
-                background-color: #f4f4f4;
+                background-color: #f6f6f6;
             }
         ''')
         
-    def init_shadow_effect(self):
-        self.shadow_effect = QGraphicsDropShadowEffect()
-        self.shadow_effect.setBlurRadius(30)
-        self.shadow_effect.setOffset(0, 0)
-        self.shadow_effect.setColor(Qt.gray)
-        
-    def set_button_style(self, button: QPushButton):
-        button.setFixedHeight(60)
-        button.setStyleSheet("""
-            QPushButton {
-                font-size: 24px;
-                margin-bottom: 10px;
-                background-color: white;
-                border: none;
-                border-radius: 8px;
-            }
-            QPushButton:hover {
-                background-color: #e0e0e0;
-            }
-            QPushButton:pressed {
-                background-color: #c0c0c0;
-            }
-        """)
+    # def init_shadow_effect(self):
+    #     self.shadow_effect = QGraphicsDropShadowEffect()
+    #     self.shadow_effect.setBlurRadius(30)
+    #     self.shadow_effect.setOffset(0, 0)
+    #     self.shadow_effect.setColor(Qt.gray)
         
     def open_import_window(self):
         self.import_window = ImportDataWindow()
@@ -198,9 +185,13 @@ class MainWindow(QWidget):
     
     def import_royalty(self):
         self.royalty_data = load_data(self)
+        if self.royalty_data is None:
+            return
     
     def import_migration_data(self):
         self.migration_data = load_data(self)
+        if self.migration_data is None:
+            return
     
     def export_data(self):
         pass
@@ -208,7 +199,15 @@ class MainWindow(QWidget):
     def on_case_clicked(self, index):
         """点击案例项时的回调函数"""
         case = self.case_list_model.data(index, Qt.DisplayRole)
-        print(f"点击了案例: {case['title']} - {case['info']}")
+        if not case:
+            return
+        # case_list_model其他所有的case背景颜色恢复
+        for row in range(self.case_list_model.rowCount()):
+            _case = self.case_list_model.data(self.case_list_model.index(row, 0), Qt.DisplayRole)
+            if _case:
+                _case["highlighted"] = False
+        case["highlighted"] = True
+        self.case_list_model.layoutChanged.emit()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

@@ -1,19 +1,20 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, 
     QLabel, QComboBox, QProgressBar, QListWidget, QLineEdit, QCheckBox, QListView,
-    QSizePolicy, QFileDialog
+    QSizePolicy, QFileDialog, QSpacerItem
 )
+from PyQt5.QtGui import QFont
 from PyQt5.QtCore import Qt, QTimer
 import pandas as pd
 
 from caselist import CaseListModel, CaseItemDelegate, get_case_list_widget
-from utils import load_data
+from utils import load_data, set_button_style
 
 class ImportDataWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("导入数据")
-        self.setGeometry(600, 100, 800, 1200)
+        self.setGeometry(600, 100, 1000, 1200)
 
         self.initUI()
         self.exist_unmatched = False
@@ -22,33 +23,66 @@ class ImportDataWindow(QWidget):
 
     def initUI(self):
         layout = QVBoxLayout()
+        layout.setSpacing(20)
+        layout.setContentsMargins(40, 40, 40, 40)
 
         # 顶部选择框和按钮
         top_layout = QHBoxLayout()
+        top_layout.setSpacing(40)
+        
+        font = QFont()
+        font.setPointSize(10)  # 设置字体大小
+
         self.source_combo = QComboBox()
         self.source_combo.addItems(["中国工商案例库", "华图"])
         self.source_combo.currentIndexChanged.connect(self.on_source_selected)
-        self.copyright_combo = QComboBox()
-        self.copyright_combo.addItems(["清华", "浙大", "人大"])
-        self.copyright_combo.currentIndexChanged.connect(self.on_copyright_selected)
+        self.source_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)  # 自适应大小
+        self.source_combo.setFont(font)
+        # self.copyright_combo = QComboBox()
+        # self.copyright_combo.addItems(["清华", "浙大", "人大"])
+        # self.copyright_combo.currentIndexChanged.connect(self.on_copyright_selected)
+        # self.copyright_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        # self.copyright_combo.setFont(font)
 
         self.load_button = QPushButton("读取数据")
+        set_button_style(self.load_button, 40)
         self.load_button.clicked.connect(self.on_load_data_clicked)
 
-        top_layout.addWidget(QLabel("选择数据来源"))
-        top_layout.addWidget(self.source_combo)
-        top_layout.addWidget(QLabel("选择版权方"))
-        top_layout.addWidget(self.copyright_combo)
-        top_layout.addWidget(self.load_button)
+        data_source_container = QWidget()
+        data_source_layout = QHBoxLayout(data_source_container)
+        label1 = QLabel("数据来源")
+        label1.setFont(font)
+        label1.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)  # 设置QLabel为固定大小
+        data_source_layout.addWidget(label1)
+        data_source_layout.addWidget(self.source_combo)
+        
+        # copyright_container = QWidget()
+        # copyright_layout = QHBoxLayout(copyright_container)
+        # label2 = QLabel("版权方")
+        # label2.setFont(font)
+        # label2.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)  # 设置QLabel为固定大小
+        # copyright_layout.addWidget(label2)
+        # copyright_layout.addWidget(self.copyright_combo)
+
+        top_layout.addWidget(data_source_container, 3)
+        # top_layout.addWidget(copyright_container, 3)
+        top_layout.addWidget(self.load_button, 2)
 
         # 数据表格
         self.table = QTableWidget()
-        self.table.setColumnCount(3)  # 假设有3列
-        self.table.setHorizontalHeaderLabels(["列1", "列2", "列3"])
+        # self.table.setColumnCount(3)  # 假设有3列
+        # self.table.setHorizontalHeaderLabels(["列1", "列2", "列3"])
+        self.table.setColumnCount(0)
+        self.table.setHorizontalHeaderLabels([])
+        self.table.setStyleSheet('''
+            border: none;
+        ''')
 
         # 计算 & 进度条
         calc_layout = QVBoxLayout()
+        calc_layout.setSpacing(10)
         self.calc_button = QPushButton("开始计算")
+        set_button_style(self.calc_button, 40)
         self.calc_button.clicked.connect(self.on_calc_clicked)
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
@@ -67,20 +101,38 @@ class ImportDataWindow(QWidget):
         match_layout = QHBoxLayout()
         self.unmatched_case_model, self.unmatched_case_list_view = get_case_list_widget()
         self.unmatched_case_list_view.clicked.connect(self.on_unmatched_case_clicked)
+        self.unmatched_case_list_view.setStyleSheet("""
+            border: none;
+        """)
         
         self.search_box = QVBoxLayout()
+        self.search_box.setSpacing(10)
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("输入关键词搜索")
+        self.search_input.setFixedHeight(50)
+        self.search_input.setStyleSheet("""
+            font-size: 20px;
+            border: none;
+            border-bottom: 1px solid rgb(200, 200, 200);
+            border-radius: 4px;
+            padding: 4px;
+        """)
 
         self.search_results_model, self.search_results_list_view = get_case_list_widget(test_cases)
+        self.search_results_list_view.setStyleSheet("""
+            border: none;
+            border-right: 1px solid #dbdbdb;
+        """)
         self.search_results_list_view.clicked.connect(self.on_search_results_clicked)
         
         self.confirm_button = QPushButton("确认")
+        set_button_style(self.confirm_button, 40)
         self.confirm_button.clicked.connect(self.on_confirm_clicked)
         
-        self.search_box.addWidget(self.search_input)
-        self.search_box.addWidget(self.search_results_list_view)
-        self.search_box.addWidget(self.confirm_button)
+        self.search_box.addWidget(self.search_input, 2)
+        self.search_box.addItem(QSpacerItem(0, 10, QSizePolicy.Minimum, QSizePolicy.Expanding))
+        self.search_box.addWidget(self.search_results_list_view, 6)
+        self.search_box.addWidget(self.confirm_button, 2)
 
         match_layout.addWidget(self.unmatched_case_list_view)
         match_layout.addLayout(self.search_box)
@@ -88,10 +140,19 @@ class ImportDataWindow(QWidget):
         # 添加组件到主布局
         layout.addLayout(top_layout, 2)
         layout.addWidget(self.table, 4)
+        layout.addItem(QSpacerItem(0, 20, QSizePolicy.Minimum, QSizePolicy.Fixed))
         layout.addLayout(calc_layout, 2)
+        layout.addItem(QSpacerItem(0, 20, QSizePolicy.Minimum, QSizePolicy.Fixed))
         layout.addLayout(match_layout, 6)
 
         self.setLayout(layout)
+        self.setObjectName("ImportWindow")
+        self.setStyleSheet('''
+            #ImportWindow {
+                background-color: #f4f4f4;
+            }
+        ''')
+        
         
     def on_unmatched_case_clicked(self, index):
         pass
@@ -114,20 +175,22 @@ class ImportDataWindow(QWidget):
         self.data_source = self.source_combo.currentText()
         print(f"选择了数据来源: {self.data_source}")
 
-    def on_copyright_selected(self, index):
-        """当选择版权方时触发"""
-        self.copyright_source = self.copyright_combo.currentText()
-        print(f"选择了版权方: {self.copyright_source}")
+    # def on_copyright_selected(self, index):
+    #     """当选择版权方时触发"""
+    #     self.copyright_source = self.copyright_combo.currentText()
+    #     print(f"选择了版权方: {self.copyright_source}")
 
     def on_load_data_clicked(self):
         data = load_data(self)
+        if data is None:
+            return
         self.case_data = data
             
         if isinstance(data, dict):  
             sheet_names = list(data.keys())  
             print(f"文件包含多个 Sheet: {sheet_names}")
-            data = data[sheet_names[0]]  # 读取第一个 sheet
-            
+            data = data[sheet_names[0]]  # 读取第一个 sheet            
+
         data = data.head(10)
             
         self.table.setRowCount(len(data))

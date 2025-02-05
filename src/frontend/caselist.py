@@ -33,7 +33,7 @@ class CaseItemDelegate(QStyledItemDelegate):
             font_metrics = painter.fontMetrics()
             
             if case.get("highlighted", False):
-                painter.fillRect(option.rect, QBrush(QColor(216, 204, 255)))
+                painter.fillRect(option.rect, QBrush(QColor(249, 247, 255)))
             
             text_width = option.rect.width() - 20  # 让文本适应 `QListView`
             title_height = font_metrics.height()
@@ -89,8 +89,4 @@ def get_case_list_widget(cases = None):
     case_list_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
     case_list_view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
     case_list_view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-    case_list_view.setStyleSheet("""
-        border: none;
-        border-right: 1px solid #dbdbdb;
-    """)
     return case_list_model, case_list_view

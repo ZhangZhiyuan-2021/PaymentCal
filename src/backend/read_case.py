@@ -7,6 +7,7 @@ from fuzzywuzzy import process
 
 from src.db.init_db import CopyrightOwner, Case, BrowsingRecord, DownloadRecord, HuaTuData, Payment
 
+# 读案例列表
 def readCaseList(path):
     # 读取 xls 或 xlsx 文件
     df = pd.read_excel(path)
@@ -132,6 +133,7 @@ def deleteAllCopyrightOwners():
     session.commit()
     session.close()
 
+# 给定案例名，返回案例所有属性
 def getCase(name):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
     Session = sessionmaker(bind=engine)
@@ -176,6 +178,7 @@ def getAllCases():
 
     return cases
 
+# 设置alias，则添加别名；其他则是更新属性
 def updateCase(name, alias=None, type=None, create_time=None, is_micro=None, is_exclusive=None, batch=None, submission_source=None, contain_TN=None, is_adapted_from_text=None, owner_id=None):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
     Session = sessionmaker(bind=engine)
@@ -243,6 +246,7 @@ def deleteAllCases():
     session.commit()
     session.close()
 
+# 导出xlsx
 def exportCaseList(path):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
     Session = sessionmaker(bind=engine)

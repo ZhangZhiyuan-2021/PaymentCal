@@ -1,4 +1,5 @@
-from PyQt5.QtWidgets import QFileDialog
+from PyQt5.QtWidgets import QFileDialog, QPushButton, QGraphicsDropShadowEffect
+from PyQt5.QtCore import Qt
 import pandas as pd
 
 def load_data(widget, file_path=None):
@@ -23,3 +24,28 @@ def load_data(widget, file_path=None):
 
     print(f"数据加载成功！文件: {file_path}")
     return data
+
+def set_button_style(button: QPushButton, height=60):
+    button.setFixedHeight(60)
+    button.setStyleSheet("""
+        QPushButton {
+            font-size: 24px;
+            margin-bottom: 10px;
+            background-color: white;
+            border: none;
+            border-radius: 8px;
+        }
+        QPushButton:hover {
+            background-color: #e0e0e0;
+        }
+        QPushButton:pressed {
+            background-color: #c0c0c0;
+        }
+    """)
+    
+    shadow_effect = QGraphicsDropShadowEffect()
+    shadow_effect.setBlurRadius(30)
+    shadow_effect.setOffset(0, 0)
+    shadow_effect.setColor(Qt.gray)
+    
+    button.setGraphicsEffect(shadow_effect)
