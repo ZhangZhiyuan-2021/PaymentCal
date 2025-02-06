@@ -4,9 +4,14 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
 import datetime
 from fuzzywuzzy import process
+import sys
+import os
 
+# 获取当前脚本的目录，向上找到 `src` 目录
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from src.db.init_db import CopyrightOwner, Case, BrowsingRecord, DownloadRecord, HuaTuData, Payment
 
+# 读案例列表
 def readCaseList(path):
     # 读取 Excel 文件，过滤“已入库”的记录
     df = pd.read_excel(path)
@@ -37,6 +42,7 @@ def readCaseList(path):
             not data_dict.get('发布时间') or pd.isna(data_dict.get('发布时间')) or
             not data_dict.get('创建时间') or pd.isna(data_dict.get('创建时间'))):
             print('案例标题、投稿编号、案例版权、发布时间、创建时间不能为空')
+            data_dict['错误信息'] = '案例标题、投稿编号、案例版权、发布时间、创建时间不能为空'
             wrong_cases.append(data_dict)
             continue
 
@@ -78,6 +84,7 @@ def readCaseList(path):
                         case.create_time = datetime.datetime.strptime(data_dict['创建时间'], "%Y-%m-%d %H:%M:%S")
                     except Exception as e:
                         print("发布时间解析错误", data_dict['发布时间'])
+                        data_dict['错误信息'] = '发布时间或创建时间格式不正确'
                         wrong_cases.append(data_dict)
                         continue
                 case.is_micro = True if data_dict.get('是否微案例') == '是' else False
@@ -97,6 +104,7 @@ def readCaseList(path):
                         create_time = datetime.datetime.strptime(data_dict['创建时间'], "%Y-%m-%d %H:%M:%S")
                     except Exception as e:
                         print("发布时间解析错误", data_dict['发布时间'])
+                        data_dict['错误信息'] = '发布时间或创建时间格式不正确'
                         wrong_cases.append(data_dict)
                         continue
                 case = Case(
@@ -242,6 +250,7 @@ def deleteAllCopyrightOwners():
     session.commit()
     session.close()
 
+# 给定案例名，返回案例所有属性
 def getCase(name):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
     Session = sessionmaker(bind=engine)
@@ -286,6 +295,7 @@ def getAllCases():
 
     return cases
 
+# 设置alias，则添加别名；其他则是更新属性
 def updateCase(name, alias=None, submission_number=None, type=None, release_time=None, create_time=None, is_micro=None, is_exclusive=None, batch=None, submission_source=None, contain_TN=None, is_adapted_from_text=None, owner_name=None):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
     Session = sessionmaker(bind=engine)
@@ -301,7 +311,7 @@ def updateCase(name, alias=None, submission_number=None, type=None, release_time
         alias_list = json.loads(case.alias)
         if alias not in alias_list:
             alias_list.append(alias.replace(' ', '').replace('　', ''))
-            case.alias = json.dumps(alias_list)
+            case.alias = json.dumps(alias_list, ensure_ascii=False)
     if type:
         case.type = type
     if submission_number:
@@ -386,6 +396,7 @@ def deleteAllCases():
     session.commit()
     session.close()
 
+# 导出xlsx
 def exportCaseList(path):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
     Session = sessionmaker(bind=engine)
@@ -820,9 +831,11 @@ def readBrowsingAndDownloadData_HuaTu(path, year):
     # 遍历 Excel 数据，更新或新增 HuaTuData
     for data_dict in data_dict_list:
         # 检查必填字段
-        if (not data_dict.get('标题') or pd.isna(data_dict.get('标题')) or
-            not data_dict.get('邮件数') or pd.isna(data_dict.get('邮件数')) or
-            not data_dict.get('查看数') or pd.isna(data_dict.get('查看数'))):
+        if (data_dict.get('标题') is None or pd.isna(data_dict.get('标题')) or
+            data_dict.get('邮件数') is None or pd.isna(data_dict.get('邮件数')) or
+            data_dict.get('查看数') is None or pd.isna(data_dict.get('查看数'))):  
+            
+            data_dict['错误信息'] = '标题、邮件数、查看数不能为空'
             missingInformationData.append(data_dict)
             continue
 

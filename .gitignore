@@ -21,3 +21,6 @@ logs/
 
 # Ignore the data
 data/
+
+*.xls
+*.xlsx
