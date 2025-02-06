@@ -9,8 +9,7 @@ Base = declarative_base()
 class CopyrightOwner(Base):
     __tablename__ = 'copyright_owner'
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String)
+    name = Column(String, index=True, unique=True, primary_key=True)
 
     def __repr__(self):
         return "<CopyrightOwner(name='%s')>" % (self.name)
@@ -18,10 +17,11 @@ class CopyrightOwner(Base):
 class Case(Base):
     __tablename__ = 'case'
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String)
+    name = Column(String, index=True, unique=True, primary_key=True)
     alias = Column(String)
+    submission_number = Column(String)
     type = Column(String)
+    release_time = Column(DateTime)
     create_time = Column(DateTime)
     is_micro = Column(Boolean)
     is_exclusive = Column(Boolean)
@@ -29,18 +29,17 @@ class Case(Base):
     submission_source = Column(String)
     contain_TN = Column(Boolean)
     is_adapted_from_text = Column(Boolean)
-    owner_id = Column(Integer, ForeignKey('copyright_owner.id', ondelete='CASCADE'))
+    owner_name = Column(Integer, ForeignKey('copyright_owner.name', ondelete='CASCADE'))
     owner = relationship("CopyrightOwner", backref="cases")
 
     def __repr__(self):
-        return "<Case(id='%s', name='%s', alias='%s', type='%s', create_time='%s', is_micro='%s', is_exclusive='%s', batch='%s', submission_source='%s', contain_TN='%s', is_adapted_from_text='%s', owner_id='%s')>" % (self.id, self.name, self.alias, self.type, self.create_time, self.is_micro, self.is_exclusive, self.batch, self.submission_source, self.contain_TN, self.is_adapted_from_text, self.owner_id)
-    
+        return "<Case(id='%s', name='%s', alias='%s', type='%s', release_time='%s', is_micro='%s', is_exclusive='%s', batch='%s', submission_source='%s', contain_TN='%s', is_adapted_from_text='%s', owner_id='%s')>" % (self.id, self.name, self.alias, self.type, self.release_time, self.is_micro, self.is_exclusive, self.batch, self.submission_source, self.contain_TN, self.is_adapted_from_text, self.owner_id)
+
 class BrowsingRecord(Base):
     __tablename__ = 'browsing_record'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    case_id = Column(Integer, ForeignKey('case.id', ondelete='CASCADE'))
-    case_name = Column(String)
+    case_name = Column(String, ForeignKey('case.name', ondelete='CASCADE'), index=True)
     case = relationship("Case", backref="browsing_records")
     browser = Column(String)
     browser_institution = Column(String)
@@ -54,8 +53,7 @@ class DownloadRecord(Base):
     __tablename__ = 'download_record'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    case_id = Column(Integer, ForeignKey('case.id', ondelete='CASCADE'))
-    case_name = Column(String)
+    case_name = Column(String, ForeignKey('case.name', ondelete='CASCADE'), index=True)
     case = relationship("Case", backref="download_records")
     downloader = Column(String)
     downloader_institution = Column(String)
@@ -69,8 +67,7 @@ class HuaTuData(Base):
     __tablename__ = 'huatu_data'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    case_id = Column(Integer, ForeignKey('case.id', ondelete='CASCADE'))
-    case_name = Column(String)
+    case_name = Column(String, ForeignKey('case.name', ondelete='CASCADE'), index=True)
     case = relationship("Case", backref="huatu_data")
     year = Column(Integer)
     views = Column(Integer)
@@ -83,7 +80,7 @@ class Payment(Base):
     __tablename__ = 'payment'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    case_id = Column(Integer, ForeignKey('case.id', ondelete='CASCADE'))
+    case_name = Column(String, ForeignKey('case.name', ondelete='CASCADE'), index=True)
     case = relationship("Case", backref="payments")
     year = Column(Integer)
     views = Column(Integer)
