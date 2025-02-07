@@ -651,40 +651,98 @@ def readBrowsingAndDownloadRecord_Tsinghua(path):
                         rec.is_valid = False
             session.commit()
 
-        # 下载记录有效性判断
-        download_records = session.query(DownloadRecord).filter_by(case_name=case.name).all()
-        if download_records:
-            downloader_group = {}
-            for record in download_records:
-                downloader_group.setdefault(record.downloader, []).append(record)
-            for _, records in downloader_group.items():
-                records.sort(key=lambda r: r.datetime)
-                records[0].is_valid = True
-                last_valid_datetime = records[0].datetime
+        # # 下载记录有效性判断
+        # download_records = session.query(DownloadRecord).filter_by(case_name=case.name).all()
+        # if download_records:
+        #     downloader_group = {}
+        #     for record in download_records:
+        #         downloader_group.setdefault(record.downloader, []).append(record)
+        #     for _, records in downloader_group.items():
+        #         records.sort(key=lambda r: r.datetime)
+        #         records[0].is_valid = True
+        #         last_valid_datetime = records[0].datetime
 
-                for rec in records[1:]:
-                    new_semester = False
-                    if last_valid_datetime.month in [1]:
-                        if (rec.datetime.year == last_valid_datetime.year and rec.datetime.month >= 2) or (rec.datetime.year > last_valid_datetime.year):
-                            new_semester = True
-                    elif last_valid_datetime.month in [2, 3, 4, 5, 6, 7]:
-                        if (rec.datetime.year == last_valid_datetime.year and rec.datetime.month >= 8) or (rec.datetime.year > last_valid_datetime.year):
-                            new_semester = True
-                    elif last_valid_datetime.month in [8, 9, 10, 11, 12]:
-                        if (rec.datetime.year == last_valid_datetime.year + 1 and rec.datetime.month >= 2) or (rec.datetime.year > last_valid_datetime.year + 1):
-                            new_semester = True
+        #         for rec in records[1:]:
+        #             new_semester = False
+        #             if last_valid_datetime.month in [1]:
+        #                 if (rec.datetime.year == last_valid_datetime.year and rec.datetime.month >= 2) or (rec.datetime.year > last_valid_datetime.year):
+        #                     new_semester = True
+        #             elif last_valid_datetime.month in [2, 3, 4, 5, 6, 7]:
+        #                 if (rec.datetime.year == last_valid_datetime.year and rec.datetime.month >= 8) or (rec.datetime.year > last_valid_datetime.year):
+        #                     new_semester = True
+        #             elif last_valid_datetime.month in [8, 9, 10, 11, 12]:
+        #                 if (rec.datetime.year == last_valid_datetime.year + 1 and rec.datetime.month >= 2) or (rec.datetime.year > last_valid_datetime.year + 1):
+        #                     new_semester = True
 
-                    if new_semester and (rec.datetime - last_valid_datetime).days >= 60:
-                        rec.is_valid = True
-                        last_valid_datetime = rec.datetime
-                    else:
-                        rec.is_valid = False
-            session.commit()
+        #             if new_semester and (rec.datetime - last_valid_datetime).days >= 60:
+        #                 rec.is_valid = True
+        #                 last_valid_datetime = rec.datetime
+        #             else:
+        #                 rec.is_valid = False
+        #     session.commit()
 
     session.close()
 
     return (missingInformationBrowsingRecords, missingInformationDownloadRecords,
             wrongBrowsingRecords, wrongDownloadRecords)
+
+def addBrowsingRecord_Tsinghua(case_name, browser, browser_institution, datetime):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    
+    all_cases = session.query(Case).all() 
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
+    case_name = case_name.replace(' ', '').replace('　', '')
+    case = cases_by_name_and_alias.get(case_name)
+    if not case:
+        print('案例不存在')
+        return None
+
+    record = BrowsingRecord(
+        case_name=case.name,
+        browser=browser, 
+        browser_institution=browser_institution,
+        datetime=datetime
+    )
+    session.add(record)
+    session.commit()
+    session.close()
+
+    return record
+
+def addDownloadRecord_Tsinghua(case_name, downloader, downloader_institution, datetime):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    
+    all_cases = session.query(Case).all() 
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
+    case_name = case_name.replace(' ', '').replace('　', '')
+    case = cases_by_name_and_alias.get(case_name)
+    if not case:
+        print('案例不存在')
+        return None
+
+    record = DownloadRecord(
+        case_name=case.name,
+        downloader=downloader, 
+        downloader_institution=downloader_institution,
+        datetime=datetime
+    )
+    session.add(record)
+    session.commit()
+    session.close()
+
+    return record
 
 def getBrowsingRecord(case_name, browser=None, browser_institution=None, datetime=None, is_valid=None):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
