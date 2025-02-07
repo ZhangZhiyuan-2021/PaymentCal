@@ -18,7 +18,7 @@ class Case(Base):
     __tablename__ = 'case'
 
     name = Column(String, index=True, unique=True, primary_key=True)
-    alias = Column(String)
+    alias = Column(String) # name 也会同时存在于 alias 中
     submission_number = Column(String)
     type = Column(String)
     release_time = Column(DateTime)
@@ -33,7 +33,7 @@ class Case(Base):
     owner = relationship("CopyrightOwner", backref="cases")
 
     def __repr__(self):
-        return "<Case(id='%s', name='%s', alias='%s', type='%s', release_time='%s', is_micro='%s', is_exclusive='%s', batch='%s', submission_source='%s', contain_TN='%s', is_adapted_from_text='%s', owner_id='%s')>" % (self.id, self.name, self.alias, self.type, self.release_time, self.is_micro, self.is_exclusive, self.batch, self.submission_source, self.contain_TN, self.is_adapted_from_text, self.owner_id)
+        return "<Case(name='%s', alias='%s', submission_number='%s, type='%s', release_time='%s', create_time='%s, is_micro='%s', is_exclusive='%s', batch='%s', submission_source='%s', contain_TN='%s', is_adapted_from_text='%s', owner_name='%s')>" % (self.name, self.alias, self.submission_number, self.type, self.release_time, self.create_time, self.is_micro, self.is_exclusive, self.batch, self.submission_source, self.contain_TN, self.is_adapted_from_text, self.owner_name)
 
 class BrowsingRecord(Base):
     __tablename__ = 'browsing_record'
@@ -47,7 +47,7 @@ class BrowsingRecord(Base):
     is_valid = Column(Boolean)
 
     def __repr__(self):
-        return "<BrowsingRecord(id='%s', case_id='%s', case_name='%s', browser='%s', browser_institution='%s', datetime='%s, is_valid='%s')>" % (self.id, self.case_id, self.case_name, self.browser, self.browser_institution, self.datetime, self.is_valid)
+        return "<BrowsingRecord(id='%s', case_name='%s', browser='%s', browser_institution='%s', datetime='%s, is_valid='%s')>" % (self.id, self.case_name, self.browser, self.browser_institution, self.datetime, self.is_valid)
     
 class DownloadRecord(Base):
     __tablename__ = 'download_record'
@@ -61,7 +61,7 @@ class DownloadRecord(Base):
     is_valid = Column(Boolean)
 
     def __repr__(self):
-        return "<DownloadRecord(id='%s', case_id='%s', case_name='%s', downloader='%s', downloader_institution='%s', datetime='%s, is_valid='%s')>" % (self.id, self.case_id, self.case_name, self.downloader, self.downloader_institution, self.datetime, self.is_valid)
+        return "<DownloadRecord(id='%s', case_name='%s', downloader='%s', downloader_institution='%s', datetime='%s, is_valid='%s')>" % (self.id, self.case_name, self.downloader, self.downloader_institution, self.datetime, self.is_valid)
     
 class HuaTuData(Base):
     __tablename__ = 'huatu_data'
@@ -74,7 +74,7 @@ class HuaTuData(Base):
     downloads = Column(Integer)
 
     def __repr__(self):
-        return "<HuaTuData(id='%s', case_id='%s', case_name='%s', year='%s', views='%s', downloads='%s')>" % (self.id, self.case_id, self.case_name, self.year, self.views, self.downloads)
+        return "<HuaTuData(id='%s', case_name='%s', year='%s', views='%s', downloads='%s')>" % (self.id, self.case_name, self.year, self.views, self.downloads)
 
 class Payment(Base):
     __tablename__ = 'payment'

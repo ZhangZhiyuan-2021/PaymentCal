@@ -20,9 +20,16 @@ def readCaseList(path):
     # -------------------------------
     # 【优化】直接加载所有案例和版权方数据
     all_cases = session.query(Case).all()
-    # 构建两个缓存：按案例标题和投稿编号索引
-    cases_by_name = {case.name: case for case in all_cases if case.name}
-    cases_by_submission = {case.submission_number: case for case in all_cases if case.submission_number}
+    # 构建两个缓存：按案例标题和投稿编号索引的案例字典
+    # 构建以 name 和 alias 为键的案例字典，需要将 alias 转换为列表并逐个匹配
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name in name_and_alias:
+            cases_by_name_and_alias[name] = case
+    cases_by_submission = {}
+    for case in all_cases:
+        cases_by_submission.setdefault(case.submission_number, []).append(case)
 
     all_owners = session.query(CopyrightOwner).all()
     owner_cache = {owner.name: owner for owner in all_owners if owner.name}
@@ -31,11 +38,11 @@ def readCaseList(path):
     # 遍历 Excel 中的每条记录
     for data_dict in data_dict_list:
         # 检查必填字段
-        if (not data_dict.get('案例标题') or pd.isna(data_dict.get('案例标题')) or
-            not data_dict.get('投稿编号') or pd.isna(data_dict.get('投稿编号')) or
-            not data_dict.get('案例版权') or pd.isna(data_dict.get('案例版权')) or
-            not data_dict.get('发布时间') or pd.isna(data_dict.get('发布时间')) or
-            not data_dict.get('创建时间') or pd.isna(data_dict.get('创建时间'))):
+        if (pd.isna(data_dict.get('案例标题')) or data_dict.get('案例标题').strip() == '' or
+            pd.isna(data_dict.get('投稿编号')) or data_dict.get('投稿编号').strip() == '' or
+            pd.isna(data_dict.get('案例版权')) or data_dict.get('案例版权').strip() == '' or
+            pd.isna(data_dict.get('发布时间')) or data_dict.get('发布时间').strip() == '' or
+            pd.isna(data_dict.get('创建时间')) or data_dict.get('创建时间').strip() == ''):
             print('案例标题、投稿编号、案例版权、发布时间、创建时间不能为空')
             wrong_cases.append(data_dict)
             continue
@@ -52,72 +59,82 @@ def readCaseList(path):
         submission_number = data_dict['投稿编号']
 
         # 先按案例标题查找，如不存在再按投稿编号查找
-        case = cases_by_name.get(case_title)
-        if not case:
-            case = cases_by_submission.get(submission_number)
-            if (case and 
-                case.owner_name == owner.name and 
-                case.release_time == datetime.datetime.strptime(data_dict['发布时间'], "%Y-%m-%d %H:%M:%S.%f") and
-                case.create_time == datetime.datetime.strptime(data_dict['创建时间'], "%Y-%m-%d %H:%M:%S.%f")):
-                cases_by_name.pop(case.name, None)
-                # 已存在的案例：更新信息
-                # 更新 alias（别名）记录
-                alias_list = json.loads(case.alias)
-                if case_title not in alias_list:
-                    alias_list.append(case_title)
-                    case.alias = json.dumps(alias_list)
-                # 更新其他字段
-                case.name = case_title
-                case.type = data_dict.get('产品类型')
-                try:
-                    case.release_time = datetime.datetime.strptime(data_dict['发布时间'], "%Y-%m-%d %H:%M:%S.%f")
-                    case.create_time = datetime.datetime.strptime(data_dict['创建时间'], "%Y-%m-%d %H:%M:%S.%f")
-                except Exception:
+        case = cases_by_name_and_alias.get(case_title)
+        if case:
+            print('案例已存在', case_title)
+            continue
+
+        submission_cases = cases_by_submission.get(submission_number)
+        if submission_cases:
+            for case in submission_cases:
+                if (case.owner_name == owner.name and 
+                    case.release_time == datetime.datetime.strptime(data_dict['发布时间'], "%Y-%m-%d %H:%M:%S.%f") and
+                    case.create_time == datetime.datetime.strptime(data_dict['创建时间'], "%Y-%m-%d %H:%M:%S.%f")):
+                    # 已存在的案例：更新信息
+                    print(f'案例已存在，改名并更新信息。原名：{case.name}，新名：{case_title}')
+                    # 更新 alias（别名）记录
+                    alias_list = json.loads(case.alias)
+                    if case_title not in alias_list:
+                        alias_list.append(case_title)
+                        case.alias = json.dumps(alias_list)
+                    # 更新其他字段
+                    case.name = case_title
+                    case.type = data_dict.get('产品类型')
                     try:
-                        case.release_time = datetime.datetime.strptime(data_dict['发布时间'], "%Y-%m-%d %H:%M:%S")
-                        case.create_time = datetime.datetime.strptime(data_dict['创建时间'], "%Y-%m-%d %H:%M:%S")
-                    except Exception as e:
-                        print("发布时间解析错误", data_dict['发布时间'])
-                        wrong_cases.append(data_dict)
-                        continue
-                case.is_micro = True if data_dict.get('是否微案例') == '是' else False
-                case.submission_source = data_dict.get('投稿来源')
-                case.contain_TN = True if data_dict.get('是否含有教学说明') == '是' else False
-                case.is_adapted_from_text = True if data_dict.get('是否由文字案例改编') == '是' else False
-                case.owner_name = owner.name
-                cases_by_name[case_title] = case
-            else:
-                # 新建案例
-                try:
-                    release_time = datetime.datetime.strptime(data_dict['发布时间'], "%Y-%m-%d %H:%M:%S.%f")
-                    create_time = datetime.datetime.strptime(data_dict['创建时间'], "%Y-%m-%d %H:%M:%S.%f")
-                except Exception:
-                    try:
-                        release_time = datetime.datetime.strptime(data_dict['发布时间'], "%Y-%m-%d %H:%M:%S")
-                        create_time = datetime.datetime.strptime(data_dict['创建时间'], "%Y-%m-%d %H:%M:%S")
-                    except Exception as e:
-                        print("发布时间解析错误", data_dict['发布时间'])
-                        wrong_cases.append(data_dict)
-                        continue
-                case = Case(
-                    name=case_title,
-                    alias=json.dumps([case_title]),
-                    type=data_dict.get('产品类型'),
-                    submission_number=submission_number,
-                    release_time=release_time,
-                    create_time=create_time,
-                    is_micro=True if data_dict.get('是否微案例') == '是' else False,
-                    is_exclusive = True, # 默认全为独家案例，从人大案例列表中获取非独家信息
-                    batch = 0,
-                    submission_source=data_dict.get('投稿来源'),
-                    contain_TN=True if data_dict.get('是否含有教学说明') == '是' else False,
-                    is_adapted_from_text=True if data_dict.get('是否由文字案例改编') == '是' else False,
-                    owner_name=owner.name
-                )
-                session.add(case)
-                # 同时更新缓存
-                cases_by_name[case_title] = case
-                cases_by_submission[submission_number] = case
+                        case.release_time = datetime.datetime.strptime(data_dict['发布时间'], "%Y-%m-%d %H:%M:%S.%f")
+                        case.create_time = datetime.datetime.strptime(data_dict['创建时间'], "%Y-%m-%d %H:%M:%S.%f")
+                    except Exception:
+                        try:
+                            case.release_time = datetime.datetime.strptime(data_dict['发布时间'], "%Y-%m-%d %H:%M:%S")
+                            case.create_time = datetime.datetime.strptime(data_dict['创建时间'], "%Y-%m-%d %H:%M:%S")
+                        except Exception as e:
+                            print("发布时间解析错误", data_dict['发布时间'])
+                            wrong_cases.append(data_dict)
+                            continue
+                    case.is_micro = True if data_dict.get('是否微案例') == '是' else False
+                    case.submission_source = data_dict.get('投稿来源')
+                    case.contain_TN = True if data_dict.get('是否含有教学说明') == '是' else False
+                    case.is_adapted_from_text = True if data_dict.get('是否由文字案例改编') == '是' else False
+                    case.owner_name = owner.name
+                    if case_title not in cases_by_name_and_alias:
+                        cases_by_name_and_alias[case_title] = case
+                    continue
+        
+        # 新建案例
+        try:
+            release_time = datetime.datetime.strptime(data_dict['发布时间'], "%Y-%m-%d %H:%M:%S.%f")
+            create_time = datetime.datetime.strptime(data_dict['创建时间'], "%Y-%m-%d %H:%M:%S.%f")
+        except Exception:
+            try:
+                release_time = datetime.datetime.strptime(data_dict['发布时间'], "%Y-%m-%d %H:%M:%S")
+                create_time = datetime.datetime.strptime(data_dict['创建时间'], "%Y-%m-%d %H:%M:%S")
+            except Exception as e:
+                print("发布时间解析错误", data_dict['发布时间'])
+                wrong_cases.append(data_dict)
+                continue
+        if '别名' in data_dict[0]:
+            alias = json.dumps(list(data_dict['别名'].split('，')))
+        else:
+            alias = json.dumps([case_title])
+        case = Case(
+            name=case_title,
+            alias=alias,
+            type=data_dict.get('产品类型'),
+            submission_number=submission_number,
+            release_time=release_time,
+            create_time=create_time,
+            is_micro=True if data_dict.get('是否微案例') == '是' else False,
+            is_exclusive = True, # 默认全为独家案例，从人大案例列表中获取非独家信息
+            batch = 0,
+            submission_source=data_dict.get('投稿来源'),
+            contain_TN=True if data_dict.get('是否含有教学说明') == '是' else False,
+            is_adapted_from_text=True if data_dict.get('是否由文字案例改编') == '是' else False,
+            owner_name=owner.name
+        )
+        session.add(case)
+        # 同时更新缓存
+        cases_by_name_and_alias[case_title] = case
+        cases_by_submission.setdefault(submission_number, []).append(case)
 
     session.commit()
     session.close()
@@ -130,6 +147,9 @@ def readCaseExclusiveAndBatch(path, owner_name, batch):
         if '标题' in attr:
             title = attr
             break
+    if not title:
+        print('标题字段不存在')
+        return None
     missingInformationCases = []
     wrong_cases = []
 
@@ -137,38 +157,41 @@ def readCaseExclusiveAndBatch(path, owner_name, batch):
     Session = sessionmaker(bind=engine)
     session = Session()
 
-    all_owners = session.query(CopyrightOwner).all()
-    owner_cache = {owner.name: owner for owner in all_owners if owner.name} # TODO 整体对案例版权进行一次查询
-    all_owner_cases = [] # TODO 等待回复：版权以案例文档列表为准，还是以批次案例为准
+    owner_name = owner_name.replace(' ', '').replace('　', '')
+    owner = session.query(CopyrightOwner).filter_by(name=owner_name).first()
+    if not owner:
+        print('版权方不存在')
+        return None
+    
+    # TODO 对案例版权列表整体筛选一次
+    all_cases = session.query(Case).all()
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name in name_and_alias:
+            cases_by_name_and_alias[name] = case
+
     if '中国人民大学' in owner_name:
         is_exclusive = False
-        for owner in owner_cache:
-            if '中国人民大学' in owner:
-                all_owner_cases.extend(owner_cache[owner].cases)
     elif '浙江大学' in owner_name:
         is_exclusive = True
-        for owner in owner_cache:
-            if '浙江大学' in owner:
-                all_owner_cases.extend(owner_cache[owner].cases)
-
-    cases_by_name = {case.name: case for case in all_owner_cases if case.name}
 
     for data_dict in data_dict_list:
-        if not data_dict.get(title) or pd.isna(data_dict.get(title)):
+        if pd.isna(data_dict.get(title)) or data_dict.get(title).strip() == '':
             print('案例标题不能为空')
             missingInformationCases.append(data_dict)
             continue
 
         case_title = data_dict[title].replace(' ', '').replace('　', '')
-
-        case = cases_by_name.get(case_title)
+        case = cases_by_name_and_alias.get(case_title)
         if not case:
             print('案例不存在', case_title)
             wrong_cases.append(data_dict)
             continue
 
         case.is_exclusive = is_exclusive
-        case.batch = batch
+        case.batch = int(batch)
+        case.owner_name = owner.name
 
     session.commit()
     session.close()
@@ -247,7 +270,14 @@ def getCase(name):
     Session = sessionmaker(bind=engine)
     session = Session()
 
-    case = session.query(Case).filter_by(name=name.replace(' ', '').replace('　', '')).first()
+    all_cases = session.query(Case).all()
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name in name_and_alias:
+            cases_by_name_and_alias[name] = case
+    name = name.replace(' ', '').replace('　', '')
+    case = cases_by_name_and_alias.get(name)
     if not case:
         print('案例不存在', name)
         return None
@@ -263,13 +293,17 @@ def getSimilarCases(name):
 
     # 通过 fuzzywuzzy 模糊匹配案例名称
     # 直接搜索 Case.name 会给出一个长度为 1 的名称元组的列表
-    cases = session.query(Case).all()
-    case_names = [case.name for case in cases]
-    similar_case_names = process.extract(name.replace(' ', '').replace('　', ''), case_names, limit=10)
+    all_cases = session.query(Case).all()
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name in name_and_alias:
+            cases_by_name_and_alias[name] = case
+    similar_case_names = process.extract(name.replace(' ', '').replace('　', ''), cases_by_name_and_alias.keys(), limit=10)
     similar_cases = []
     for similar_case_name in similar_case_names:
-        similar_case = session.query(Case).filter_by(name=similar_case_name[0]).first()
-        similar_cases.append(similar_case)
+        similar_case = cases_by_name_and_alias.get(similar_case_name[0])
+        similar_cases.append((similar_case_name[0], similar_case))
 
     session.close()
 
@@ -291,8 +325,14 @@ def updateCase(name, alias=None, submission_number=None, type=None, release_time
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    all_cases = session.query(Case).all() 
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name in name_and_alias:
+            cases_by_name_and_alias[name] = case
     name = name.replace(' ', '').replace('　', '')
-    case = session.query(Case).filter_by(name=name).first()
+    case = cases_by_name_and_alias.get(name)
     if not case:
         print('案例不存在', name)
         return None
@@ -339,8 +379,14 @@ def deleteAlias(name, alias):
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    all_cases = session.query(Case).all() 
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name in name_and_alias:
+            cases_by_name_and_alias[name] = case
     name = name.replace(' ', '').replace('　', '')
-    case = session.query(Case).filter_by(name=name).first()
+    case = cases_by_name_and_alias.get(name)
     if not case:
         print('案例不存在', name)
         return None
@@ -364,8 +410,14 @@ def deleteCase(name):
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    all_cases = session.query(Case).all() 
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name in name_and_alias:
+            cases_by_name_and_alias[name] = case
     name = name.replace(' ', '').replace('　', '')
-    case = session.query(Case).filter_by(name=name).first()
+    case = cases_by_name_and_alias.get(name)
     if not case:
         print('案例不存在', name)
         return None
@@ -396,6 +448,7 @@ def exportCaseList(path):
     for case in cases:
         case_dict = {}
         case_dict['案例标题'] = case.name
+        case_dict['别名'] = '，'.join(json.loads(case.alias))
         case_dict['产品类型'] = case.type
         case_dict['投稿编号'] = case.submission_number
         case_dict['发布时间'] = case.release_time.strftime("%Y-%m-%d %H:%M:%S.%f")
@@ -433,7 +486,11 @@ def readBrowsingAndDownloadRecord_Tsinghua(path):
     # 直接加载所有案例
     all_cases = session.query(Case).all()
     # 构建案例字典：名称 -> Case 对象
-    case_dict = {case.name: case for case in all_cases}
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name in name_and_alias:
+            cases_by_name_and_alias[name] = case
 
     # 收集待插入的记录列表，减少频繁 commit
     new_browsing_records = []
@@ -449,16 +506,16 @@ def readBrowsingAndDownloadRecord_Tsinghua(path):
                 continue
 
             # 检查必要字段
-            if (not data_dict.get('案例名称') or pd.isna(data_dict.get('案例名称')) or
-                not data_dict.get('浏览人账号') or pd.isna(data_dict.get('浏览人账号')) or
-                not data_dict.get('浏览时间') or pd.isna(data_dict.get('浏览时间'))):
+            if (pd.isna(data_dict.get('案例名称')) or data_dict.get('案例名称').strip() == '' or
+                pd.isna(data_dict.get('浏览人账号')) or data_dict.get('浏览人账号').strip() == '' or
+                pd.isna(data_dict.get('浏览时间')) or data_dict.get('浏览时间').strip() == ''):
                 print('案例名称、浏览人账号、浏览时间不能为空')
                 missingInformationBrowsingRecords.append(data_dict)
                 continue
 
             data_dict['案例名称'] = data_dict['案例名称'].replace(' ', '').replace('　', '')
             # 直接从加载的案例字典中查找案例
-            case = case_dict.get(data_dict['案例名称'])
+            case = cases_by_name_and_alias.get(data_dict['案例名称'])
             if not case:
                 print('案例不存在', data_dict['案例名称'])
                 wrongBrowsingRecords.append(data_dict)
@@ -503,15 +560,15 @@ def readBrowsingAndDownloadRecord_Tsinghua(path):
             if data_dict.get('下载人账号') in ['admin', 'anonymous']:
                 continue
 
-            if (not data_dict.get('案例名称') or pd.isna(data_dict.get('案例名称')) or
-                not data_dict.get('下载人账号') or pd.isna(data_dict.get('下载人账号')) or
-                not data_dict.get('下载时间') or pd.isna(data_dict.get('下载时间'))):
+            if (pd.isna(data_dict.get('案例名称')) or data_dict.get('案例名称').strip() == '' or
+                pd.isna(data_dict.get('下载人账号')) or data_dict.get('下载人账号').strip() == '' or
+                pd.isna(data_dict.get('下载时间')) or data_dict.get('下载时间').strip() == ''):
                 print('案例名称、下载人账号、下载时间不能为空')
                 missingInformationDownloadRecords.append(data_dict)
                 continue
 
             data_dict['案例名称'] = data_dict['案例名称'].replace(' ', '').replace('　', '')
-            case = case_dict.get(data_dict['案例名称'])
+            case = cases_by_name_and_alias.get(data_dict['案例名称'])
             if not case:
                 print('案例不存在', data_dict['案例名称'])
                 wrongDownloadRecords.append(data_dict)
@@ -554,7 +611,7 @@ def readBrowsingAndDownloadRecord_Tsinghua(path):
             browser_group = {}
             for record in browsing_records:
                 browser_group.setdefault(record.browser, []).append(record)
-            for browser, records in browser_group.items():
+            for _, records in browser_group.items():
                 records.sort(key=lambda r: r.datetime)
                 records[0].is_valid = True
                 last_valid_datetime = records[0].datetime
@@ -584,7 +641,7 @@ def readBrowsingAndDownloadRecord_Tsinghua(path):
             downloader_group = {}
             for record in download_records:
                 downloader_group.setdefault(record.downloader, []).append(record)
-            for downloader, records in downloader_group.items():
+            for _, records in downloader_group.items():
                 records.sort(key=lambda r: r.datetime)
                 records[0].is_valid = True
                 last_valid_datetime = records[0].datetime
@@ -618,8 +675,19 @@ def getBrowsingRecord(case_name, browser=None, browser_institution=None, datetim
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    all_cases = session.query(Case).all() 
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name in name_and_alias:
+            cases_by_name_and_alias[name] = case
     case_name = case_name.replace(' ', '').replace('　', '')
-    browsing_records = session.query(BrowsingRecord).filter_by(case_name=case_name).all()
+    case = cases_by_name_and_alias.get(case_name)
+    if not case:
+        print('案例不存在')
+        return None
+    
+    browsing_records = case.browsing_records
     if not browsing_records:
         print('浏览记录不存在')
         return None
@@ -653,8 +721,19 @@ def deleteBrowsingRecord(case_name, browser=None, browser_institution=None, date
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    all_cases = session.query(Case).all() 
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name in name_and_alias:
+            cases_by_name_and_alias[name] = case
     case_name = case_name.replace(' ', '').replace('　', '')
-    browsing_records = session.query(BrowsingRecord).filter_by(case_name=case_name).all()
+    case = cases_by_name_and_alias.get(case_name)
+    if not case:
+        print('案例不存在')
+        return None
+    
+    browsing_records = case.browsing_records
     if not browsing_records:
         print('浏览记录不存在')
         return None
@@ -690,8 +769,19 @@ def getDownloadRecord(case_name, downloader=None, downloader_institution=None, d
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    all_cases = session.query(Case).all() 
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name in name_and_alias:
+            cases_by_name_and_alias[name] = case
     case_name = case_name.replace(' ', '').replace('　', '')
-    download_records = session.query(DownloadRecord).filter_by(case_name=case_name).all()
+    case = cases_by_name_and_alias.get(case_name)
+    if not case:
+        print('案例不存在')
+        return None
+    
+    download_records = case.download_records
     if not download_records:
         print('下载记录不存在')
         return None
@@ -725,8 +815,19 @@ def deleteDownloadRecord(case_name, downloader=None, downloader_institution=None
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    all_cases = session.query(Case).all() 
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name in name_and_alias:
+            cases_by_name_and_alias[name] = case
     case_name = case_name.replace(' ', '').replace('　', '')
-    download_records = session.query(DownloadRecord).filter_by(case_name=case_name).all()
+    case = cases_by_name_and_alias.get(case_name)
+    if not case:
+        print('案例不存在')
+        return None
+    
+    download_records = case.download_records
     if not download_records:
         print('下载记录不存在')
         return None
@@ -808,33 +909,35 @@ def readBrowsingAndDownloadData_HuaTu(path, year):
     # -------------------------------
     # 预加载所有案例数据
     all_cases = session.query(Case).all()
-    cases_dict = {case.name: case for case in all_cases if case.name}
-
-    # -------------------------------
-    # 一次性加载指定年份所有 HuaTuData 数据
-    all_huatu = session.query(HuaTuData).filter_by(year=year).all()
-    # 构建映射：案例名称 -> HuaTuData 对象
-    huatu_dict = {record.case_name: record for record in all_huatu}
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name in name_and_alias:
+            cases_by_name_and_alias[name] = case
 
     # -------------------------------
     # 遍历 Excel 数据，更新或新增 HuaTuData
     for data_dict in data_dict_list:
         # 检查必填字段
-        if (not data_dict.get('标题') or pd.isna(data_dict.get('标题')) or
-            not data_dict.get('邮件数') or pd.isna(data_dict.get('邮件数')) or
-            not data_dict.get('查看数') or pd.isna(data_dict.get('查看数'))):
+        if (pd.isna(data_dict.get('标题')) or data_dict.get('标题').strip() == '' or
+            pd.isna(data_dict.get('邮件数')) or data_dict.get('邮件数').strip() == '' or
+            pd.isna(data_dict.get('查看数')) or data_dict.get('查看数').strip() == ''):
             missingInformationData.append(data_dict)
             continue
 
         data_dict['标题'] = data_dict['标题'].replace(' ', '').replace('　', '')
-        case = cases_dict.get(data_dict['标题'])
+        case = cases_by_name_and_alias.get(data_dict['标题'])
         if not case:
             print('案例不存在:', data_dict['标题'])
             wrongData.append(data_dict)
             continue
 
-        # 尝试从 huatu_dict 中获取该案例的 HuaTuData
-        huatu_data = huatu_dict.get(case.name)
+        
+        for data in case.huatu_data:
+            if data.year == int(year):
+                huatu_data = data
+                break
+
         if not huatu_data:
             # 不存在，则新建，并加入 huatu_dict 以便后续使用
             huatu_data = HuaTuData(
@@ -844,7 +947,6 @@ def readBrowsingAndDownloadData_HuaTu(path, year):
                 downloads=int(data_dict['邮件数'])
             )
             session.add(huatu_data)
-            huatu_dict[case.name] = huatu_data
         else:
             # 存在则更新数据
             huatu_data.views = int(data_dict['查看数'])
@@ -860,18 +962,28 @@ def addBrowsingAndDownloadData_HuaTu(case_name, year, views, downloads):
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    all_cases = session.query(Case).all()
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name in name_and_alias:
+            cases_by_name_and_alias[name] = case
     case_name = case_name.replace(' ', '').replace('　', '')
-    case = session.query(Case).filter_by(name=case_name).first()
+    case = cases_by_name_and_alias.get(case_name)
     if not case:
         print('案例不存在', case_name)
         return None
 
-    huatu_data = session.query(HuaTuData).filter_by(case_name=case_name, year=year).first()
+    for data in case.huatu_data:
+        if data.year == int(year):
+            huatu_data = data
+            break
+
     if not huatu_data:
         huatu_data = HuaTuData(case_name=case.name, 
-                               year=year, 
-                               views=views, 
-                               downloads=downloads)
+                               year=int(year), 
+                               views=int(views), 
+                               downloads=int(downloads))
         session.add(huatu_data)
     else:
         huatu_data.views = views
@@ -893,21 +1005,34 @@ def getHuaTuYearData():
 
     return huatu_data
 
-def getHuaTuData(case_name, year, views=None, downloads=None):
+def getHuaTuData(case_name, year=None, views=None, downloads=None):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    all_cases = session.query(Case).all()
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name in name_and_alias:
+            cases_by_name_and_alias[name] = case
     case_name = case_name.replace(' ', '').replace('　', '')
-    huatu_data = session.query(HuaTuData).filter_by(case_name=case_name, year=year).first()
+    case = cases_by_name_and_alias.get(case_name)
+    if not case:
+        print('案例不存在')
+        return None
+    
+    huatu_data = case.huatu_data
     if not huatu_data:
         print('数据不存在')
         return None
 
+    if year:
+        huatu_data = [huatu_data for huatu_data in huatu_data if huatu_data.year == int(year)]
     if views:
-        huatu_data = [huatu_data for huatu_data in huatu_data if huatu_data.views == views]
+        huatu_data = [huatu_data for huatu_data in huatu_data if huatu_data.views == int(views)]
     if downloads:
-        huatu_data = [huatu_data for huatu_data in huatu_data if huatu_data.downloads == downloads]
+        huatu_data = [huatu_data for huatu_data in huatu_data if huatu_data.downloads == int(downloads)]
 
     session.close()
 
@@ -929,37 +1054,65 @@ def updateHuaTuData(case_name, year, views=None, downloads=None):
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    all_cases = session.query(Case).all()
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name in name_and_alias:
+            cases_by_name_and_alias[name] = case
     case_name = case_name.replace(' ', '').replace('　', '')
-    huatu_data = session.query(HuaTuData).filter_by(case_name=case_name, year=year).first()
+    case = cases_by_name_and_alias.get(case_name)
+    if not case:
+        print('案例不存在')
+        return None
+    
+    for data in case.huatu_data:
+        if data.year == int(year):
+            huatu_data = data
+            break
+
     if not huatu_data:
         print('数据不存在')
         return None
 
     if views:
-        huatu_data.views = views
+        huatu_data.views = int(views)
     if downloads:
-        huatu_data.downloads = downloads
+        huatu_data.downloads = int(downloads)
 
     session.commit()
     session.close()
 
     return huatu_data
 
-def deleteHuaTuData(case_name, year, views=None, downloads=None):
+def deleteHuaTuData(case_name, year=None, views=None, downloads=None):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
     Session = sessionmaker(bind=engine)
     session = Session()
 
+    all_cases = session.query(Case).all()
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name in name_and_alias:
+            cases_by_name_and_alias[name] = case
     case_name = case_name.replace(' ', '').replace('　', '')
-    huatu_data = session.query(HuaTuData).filter_by(case_name=case_name, year=year).first()
+    case = cases_by_name_and_alias.get(case_name)
+    if not case:
+        print('案例不存在')
+        return None
+    
+    huatu_data = case.huatu_data
     if not huatu_data:
         print('数据不存在')
         return None
 
+    if year:
+        huatu_data = [huatu_data for huatu_data in huatu_data if huatu_data.year == int(year)]
     if views:
-        huatu_data = [huatu_data for huatu_data in huatu_data if huatu_data.views == views]
+        huatu_data = [huatu_data for huatu_data in huatu_data if huatu_data.views == int(views)]
     if downloads:
-        huatu_data = [huatu_data for huatu_data in huatu_data if huatu_data.downloads == downloads]
+        huatu_data = [huatu_data for huatu_data in huatu_data if huatu_data.downloads == int(downloads)]
 
     for huatu_data in huatu_data:
         session.delete(huatu_data)
@@ -984,7 +1137,7 @@ def exportHuaTuData(path, year=None):
     session = Session()
 
     if year:
-        huatu_data = session.query(HuaTuData).filter_by(year=year).all()
+        huatu_data = session.query(HuaTuData).filter_by(year=int(year)).all()
         huatu_data_list = []
         for huatu_data in huatu_data:
             huatu_data_dict = {}
@@ -997,19 +1150,19 @@ def exportHuaTuData(path, year=None):
         df.to_excel(path, index=False)
     else:
         huatu_data_list = {}
-        for year in sorted([x[0] for x in session.query(HuaTuData.year).distinct()], reverse=True):
-            huatu_data = session.query(HuaTuData).filter_by(year=year).all()
-            huatu_data_list[year] = []
+        for export_year in sorted([x[0] for x in session.query(HuaTuData.year).distinct()], reverse=True):
+            huatu_data = session.query(HuaTuData).filter_by(year=export_year).all()
+            huatu_data_list[export_year] = []
             for huatu_data in huatu_data:
                 huatu_data_dict = {}
                 huatu_data_dict['标题'] = huatu_data.case_name
                 huatu_data_dict['查看数'] = huatu_data.views
                 huatu_data_dict['邮件数'] = huatu_data.downloads
-                huatu_data_list[year].append(huatu_data_dict)
+                huatu_data_list[export_year].append(huatu_data_dict)
 
         with pd.ExcelWriter(path) as writer:
-            for year in huatu_data_list:
-                df = pd.DataFrame(huatu_data_list[year])
-                df.to_excel(writer, sheet_name=str(year), index=False)
+            for export_year in huatu_data_list:
+                df = pd.DataFrame(huatu_data_list[export_year])
+                df.to_excel(writer, sheet_name=str(export_year), index=False)
 
     session.close()
