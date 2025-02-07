@@ -4,7 +4,6 @@ from src.frontend.main import app
 
 def main():
     init_db()
-    
     app()
     # readCaseList('data/test.xls')
     # # readCaseList('data/testCaseList.xlsx')
