@@ -91,5 +91,5 @@ class Payment(Base):
         return "<Payment(id='%s', case_id='%s', year='%s', views='%s', downloads='%s', payment='%s')>" % (self.id, self.case_id, self.year, self.views, self.downloads, self.payment)
     
 def init_db():
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
     Base.metadata.create_all(engine)
