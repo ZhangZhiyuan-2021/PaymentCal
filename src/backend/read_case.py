@@ -608,7 +608,7 @@ def readBrowsingAndDownloadRecord_Tsinghua(path):
             record = DownloadRecord(
                 case_name=case.name,
                 downloader=data_dict['下载人账号'], 
-                downloader_institution=data_dict.get('下载人所在院校'),
+                downloader_institution=data_dict.get('下载人所在院校', ""),
                 datetime=download_dt, 
                 is_valid=None
             )

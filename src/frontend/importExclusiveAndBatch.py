@@ -15,13 +15,14 @@ from src.frontend.utils import *
 from src.frontend.wrongCaseListWidget import WrongCaseListWindow
 from src.backend.read_case import *
 
-class ImportBrowseDownloadDataWindow(QWidget):
+class ImportExclusiveAndBatchWindow(QWidget):
     def __init__(self):
         super().__init__()
 
         self.initUI()
-        self.data_source = "中国工商案例库"
-        self.huatu_year = None
+        self.data_source = "浙江大学管理学院"
+        self.is_exclusive = True
+        self.batch = None
         
         self.matching_case_dict = {}    # 键是匹配错误的案例名，值是选择的对应的数据库中的案例名
         self.unmatched_casename_to_class_dict_huatu = {}
@@ -59,18 +60,18 @@ class ImportBrowseDownloadDataWindow(QWidget):
         self.source_combo = QComboBox()
         set_combo_style(self.source_combo)
         self.source_combo.setFixedHeight(50)
-        self.source_combo.addItems(["中国工商案例库", "华图"])
+        self.source_combo.addItems(["浙江大学管理学院", "中国人民大学商学院"])
         self.source_combo.currentIndexChanged.connect(self.on_source_selected)
         self.source_combo.setSizeAdjustPolicy(QComboBox.AdjustToContents)  # 自适应大小
         self.source_combo.setFont(font2)
         self.source_combo.view().setFont(font2)
   
-        self.year_input = QLineEdit()
-        self.year_input.setValidator(QIntValidator(0, 9999, self))  # 只允许输入 0-9999
-        self.year_input.setPlaceholderText("请输入年份")  
-        self.year_input.setFont(font2)
-        self.year_input.setFixedHeight(50)
-        self.year_input.setStyleSheet("""
+        self.batch_input = QLineEdit()
+        self.batch_input.setValidator(QIntValidator(0, 9999, self))  # 只允许输入 0-9999
+        self.batch_input.setPlaceholderText("请输入第几批")  
+        self.batch_input.setFont(font2)
+        self.batch_input.setFixedHeight(50)
+        self.batch_input.setStyleSheet("""
             QLineEdit {
                 border: 2px solid #D1C4E9;
                 border-radius: 8px;
@@ -81,14 +82,13 @@ class ImportBrowseDownloadDataWindow(QWidget):
                 border: 2px solid #7b56f0;
             }
         """)
-        self.year_input.setVisible(False)  # 默认隐藏
         
         data_source_container = QWidget()
         data_source_container.setStyleSheet('margin-bottom: 10px;')
         data_source_layout = QHBoxLayout(data_source_container)
         data_source_layout.addWidget(label1)
         data_source_layout.addWidget(self.source_combo)
-        data_source_layout.addWidget(self.year_input)
+        data_source_layout.addWidget(self.batch_input)
 
         self.load_button = QPushButton("读取数据")
         set_button_style(self.load_button, 40)
@@ -96,19 +96,6 @@ class ImportBrowseDownloadDataWindow(QWidget):
         
         top_layout.addWidget(data_source_container, 2)
         top_layout.addWidget(self.load_button, 2)
-
-        # 计算 & 进度条
-        calc_layout = QVBoxLayout()
-        calc_layout.setSpacing(0)
-        self.calc_button = QPushButton("开始计算")
-        set_button_style(self.calc_button, 40)
-        self.calc_button.clicked.connect(self.on_calc_clicked)
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        set_progressbar_style(self.progress_bar)
-        calc_layout.addWidget(self.calc_button)
-        calc_layout.addWidget(self.progress_bar)
     
 
         unmatch_label = QLabel("下方列表中的案例无法自动匹配。请按照下列步骤操作：\n1. 选择左侧列表中某个案例；\n2. 在右侧搜索框中输入关键词搜索匹配的案例；\n3. 选择右侧列表中的案例；\n4. 所有案例手动选择完成后，点击确认按钮。")
@@ -124,7 +111,6 @@ class ImportBrowseDownloadDataWindow(QWidget):
         self.unmatch_box.addWidget(unmatch_label, 2)
         self.unmatch_box.addWidget(self.unmatched_case_list_view, 6)
 
-    
         self.search_input = SearchBar(placeholder_text="输入关键词搜索", search_callback=self.on_search_clicked)
 
         self.search_results_model, self.search_results_list_view = get_case_list_widget()
@@ -150,8 +136,6 @@ class ImportBrowseDownloadDataWindow(QWidget):
         # layout.addWidget(self.table, 4)
         layout.addItem(QSpacerItem(0, 20, QSizePolicy.Minimum, QSizePolicy.Fixed))
         layout.addLayout(match_layout, 6)
-        layout.addItem(QSpacerItem(0, 20, QSizePolicy.Minimum, QSizePolicy.Fixed))
-        layout.addLayout(calc_layout, 2)
 
         self.setLayout(layout)
         self.setObjectName("ImportWindow")
@@ -211,123 +195,76 @@ class ImportBrowseDownloadDataWindow(QWidget):
             self.matching_case_num = len(self.matching_case_dict)
 
     def on_source_selected(self, index):
-        """当选择数据来源时触发"""
         self.data_source = self.source_combo.currentText()
-        if self.data_source == "中国工商案例库":
-            self.year_input.setVisible(False)
-        elif self.data_source == "华图":
-            self.year_input.setVisible(True)
+        if '中国人民大学' in self.data_source:
+            is_exclusive = False
+        elif '浙江大学' in self.data_source:
+            is_exclusive = True
 
     def on_load_data_clicked(self):     
-        self.init_list()
-        
-        file_path, _ = QFileDialog.getOpenFileName(self, "选择文件", "", "Excel文件 (*.xls *.xlsx *.csv)")
-        if not file_path:
-            print("读取文件失败")
-            return
-             
-        if self.data_source == "中国工商案例库":
-            (_, _, wrongBrowsingRecords, wrongDownloadRecords) = readBrowsingAndDownloadRecord_Tsinghua(file_path)
-            # 提取wrongBrowsingRecords和wrongDownloadRecords的案例名，存储在set中
-            wrongCases = set()
-            for record in wrongBrowsingRecords:
-                wrongCases.add(record['案例名称'])
-            for record in wrongDownloadRecords:
-                wrongCases.add(record['案例名称'])
-            # 调用getCase函数返回Case全部信息对应的class
+        try:
+            self.init_list()
             
-            if len(wrongCases) > 0:
-                msg_box = QMessageBox()
-                msg_box.setIcon(QMessageBox.Warning)
-                msg_box.setWindowTitle(" ")
-                msg_box.setText("表格中部分案例名称无法匹配，请手动匹配！")
-                msg_box.exec_()
-                
-                wrongCaseslist = cases_name_to_widget_list(wrongCases)
-                
-                self.unmatched_casename_to_download_record_Thu = {case['案例名称']: case for case in wrongDownloadRecords}
-                self.unmatched_casename_to_browse_record_Thu = {case['案例名称']: case for case in wrongBrowsingRecords}
-                
-                self.unmatched_case_model.update_data(wrongCaseslist)
-                self.unmatched_case_model.layoutChanged.emit()
-                
-                self.unmatched_case_num = len(wrongCases)
-            else:
-                self.on_confirm_clicked()
+            self.batch = self.batch_input.text()
+            if self.batch == "":
+                QMessageBox.warning(self, "警告", "请输入批次！")
+                return
+            self.batch = int(self.batch)
             
-        else:
-            missingInformationData, wrongData = readBrowsingAndDownloadData_HuaTu(file_path, year=2024)
-            if len(missingInformationData) > 0:
-                wrongcasedict = cases_huatu_to_widget_list(missingInformationData) 
+            file_path, _ = QFileDialog.getOpenFileName(self, "选择文件", "", "Excel文件 (*.xls *.xlsx *.csv)")
+            if not file_path:
+                print("读取文件失败")
+                return
                 
+            missingInformationCases, unmatchedCases = readCaseExclusiveAndBatch(file_path, self.data_source, self.batch)
+            
+            if len(missingInformationCases) > 0:
+                missingInformationCases_Indexes = [f"序号：{i+1}，标题缺失！" for (i, case) in enumerate(missingInformationCases)]
+                wrongcasedict = cases_name_to_widget_list(missingInformationCases_Indexes)
+            
                 if not self.wrong_case_list_widget:
                     self.wrong_case_list_widget = WrongCaseListWindow(wrongcasedict)
                 else:
                     self.wrong_case_list_widget.close()  # 关闭旧的窗口，防止重复
                     self.wrong_case_list_widget = WrongCaseListWindow(wrongcasedict)
                 self.wrong_case_list_widget.show()
-            elif len(wrongData) > 0:
+                
+            elif len(unmatchedCases) > 0:
                 msg_box = QMessageBox()
                 msg_box.setIcon(QMessageBox.Warning)
                 msg_box.setWindowTitle(" ")
                 msg_box.setText("表格中部分案例名称无法匹配，请手动匹配！")
                 msg_box.exec_()
                 
-                unmatchedCaseslist = cases_huatu_to_widget_list(wrongData)
-                self.unmatched_casename_to_class_dict_huatu = {case['标题']: case for case in wrongData}
+                for attr in unmatchedCases[0]:
+                    if '标题' in attr:
+                        title = attr
+                        break
+                    
+                unmatchedCases_Names = [case[title] for case in unmatchedCases]
+                unmatchedCaseslist = cases_name_to_widget_list(unmatchedCases_Names)
                 
                 self.unmatched_case_model.update_data(unmatchedCaseslist)
-                self.unmatched_case_model.layoutChanged.emit()
                 
-                self.unmatched_case_num = len(wrongData)
-            else:
-                self.on_confirm_clicked()
-
-    def on_calc_clicked(self):
-        """模拟计算过程，并更新进度条"""
-        if self.matching_case_num != self.unmatched_case_num:
-            QMessageBox.warning(self, "警告", "请先完成所有案例的匹配！")
+                self.unmatched_case_model.layoutChanged.emit()
+                self.unmatched_case_num = len(unmatchedCases_Names)
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"{str(e)}")
             return
-        
-        self.progress_bar.setValue(0)
-        self.calc_button.setEnabled(False)  # 禁用按钮，防止多次点击
-
-        def update_progress():
-            current_value = self.progress_bar.value()
-            if current_value < 100:
-                self.progress_bar.setValue(current_value + 10)
-                QTimer.singleShot(300, update_progress)  # 300ms 后递归调用
-            else:
-                self.calc_button.setEnabled(True)
-                print("计算完成！")
-
-        QTimer.singleShot(300, update_progress)  # 开始更新进度条
 
     def on_confirm_clicked(self):
         """确认按钮点击事件"""
         print(self.matching_case_dict)
         
-        if self.data_source == "中国工商案例库":
-            if len(self.matching_case_dict) == self.unmatched_case_num:
-                for key, value in self.matching_case_dict.items():
-                    updateCase(value, alias=key)
-                # 添加浏览记录和下载记录到数据库
-                for key, value in self.unmatched_casename_to_download_record_Thu.items():
-                    addDownloadRecord_Tsinghua(self.matching_case_dict[key], value['下载人账号'], value.get('下载人所在院校', ''), value['下载时间'])
-                for key, value in self.unmatched_casename_to_browse_record_Thu.items():
-                    addBrowsingRecord_Tsinghua(self.matching_case_dict[key], value['浏览人账号'], value.get('浏览人所在院校', ''), value['浏览时间'])
+        self.batch = self.batch_input.text()
+        if self.batch == "":
+            QMessageBox.warning(self, "警告", "请输入批次！")
+            return
+        self.batch = int(self.batch)
         
-        else:
-            self.huatu_year = self.year_input.text()
-            if self.huatu_year == "":
-                QMessageBox.warning(self, "警告", "请输入年份！")
-                return
-            
-            if len(self.matching_case_dict) == self.unmatched_case_num:
-                for key, value in self.matching_case_dict.items():
-                    updateCase(value, alias=key)
-                for key, value in self.unmatched_casename_to_class_dict_huatu.items():
-                    addBrowsingAndDownloadData_HuaTu(self.matching_case_dict[key], self.huatu_year, value['查看数'], value['邮件数'])
+        if len(self.matching_case_dict) == self.unmatched_case_num:
+            for key, value in self.matching_case_dict.items():
+                updateCase(value, alias=key, batch=self.batch, owner_name=self.data_source, is_exclusive=self.is_exclusive)
                 
         self.init_list()
         

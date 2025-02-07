@@ -2,6 +2,11 @@ from PyQt5.QtWidgets import QFileDialog, QPushButton, QGraphicsDropShadowEffect,
 from PyQt5.QtCore import Qt
 import pandas as pd
 
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from src.db.init_db import *
+
 def load_data(widget, file_path=None):
     """加载 Excel/CSV 数据并填充表格"""
     if file_path is None:
@@ -154,6 +159,7 @@ def case_dict_to_widget_list(case_dict):
 def cases_dict_to_widget_list(cases_dict):
     return [case_dict_to_widget_list(case) for case in cases_dict]
 
+# 特指中国工商案例库的类别
 def case_class_to_widget_list(case):
     if case is None:
         return ""
@@ -162,7 +168,7 @@ def case_class_to_widget_list(case):
     case_dict['title'] = case.name
     case_dict['info'] = f"发布时间：{case.release_time}，案例编号：{case.submission_number}"
     return case_dict
-
+# 特指中国工商案例库的类别
 def cases_class_to_widget_list(cases):
     return [case_class_to_widget_list(case) for case in cases]
 
@@ -191,3 +197,16 @@ def case_huatu_to_widget_list(case_dict):
 
 def cases_huatu_to_widget_list(cases_dict):
     return [case_huatu_to_widget_list(case) for case in cases_dict]
+
+# 大概率不完整
+# def cases_to_widget_list(cases):
+#     cases_widget_list = []
+#     if isinstance(cases, dict):
+#         cases_widget_list = cases_dict_to_widget_list(cases)
+#     elif isinstance(cases, list):
+#         cases_widget_list = cases_name_to_widget_list(cases)
+#     elif isinstance(cases, Case):
+#         cases_widget_list = cases_class_to_widget_list(cases)
+#     elif isinstance(cases, HuaTuData):
+#         cases_widget_list = cases_huatu_to_widget_list(cases)
+#     return cases_widget_list
