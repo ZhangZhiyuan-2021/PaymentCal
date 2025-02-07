@@ -4,9 +4,14 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
 import datetime
 from fuzzywuzzy import process
+import sys
+import os
 
+# 获取当前脚本的目录，向上找到 `src` 目录
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from src.db.init_db import CopyrightOwner, Case, BrowsingRecord, DownloadRecord, HuaTuData, Payment
 
+# 读案例列表
 def readCaseList(path):
     # 读取 Excel 文件，过滤“已入库”的记录
     df = pd.read_excel(path)
@@ -44,6 +49,7 @@ def readCaseList(path):
             pd.isna(data_dict.get('发布时间')) or data_dict.get('发布时间').strip() == '' or
             pd.isna(data_dict.get('创建时间')) or data_dict.get('创建时间').strip() == ''):
             print('案例标题、投稿编号、案例版权、发布时间、创建时间不能为空')
+            data_dict['错误信息'] = '案例标题、投稿编号、案例版权、发布时间、创建时间不能为空'
             wrong_cases.append(data_dict)
             continue
 
@@ -265,6 +271,7 @@ def deleteAllCopyrightOwners():
     session.commit()
     session.close()
 
+# 给定案例名，返回案例所有属性
 def getCase(name):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
     Session = sessionmaker(bind=engine)
@@ -320,6 +327,7 @@ def getAllCases():
 
     return cases
 
+# 设置alias，则添加别名；其他则是更新属性
 def updateCase(name, alias=None, submission_number=None, type=None, release_time=None, create_time=None, is_micro=None, is_exclusive=None, batch=None, submission_source=None, contain_TN=None, is_adapted_from_text=None, owner_name=None):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
     Session = sessionmaker(bind=engine)
@@ -341,7 +349,7 @@ def updateCase(name, alias=None, submission_number=None, type=None, release_time
         alias_list = json.loads(case.alias)
         if alias not in alias_list:
             alias_list.append(alias.replace(' ', '').replace('　', ''))
-            case.alias = json.dumps(alias_list)
+            case.alias = json.dumps(alias_list, ensure_ascii=False)
     if type:
         case.type = type
     if submission_number:
@@ -438,6 +446,7 @@ def deleteAllCases():
     session.commit()
     session.close()
 
+# 导出xlsx
 def exportCaseList(path):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
     Session = sessionmaker(bind=engine)
