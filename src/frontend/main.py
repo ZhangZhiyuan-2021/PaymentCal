@@ -16,7 +16,8 @@ from src.frontend.importBrowseDownloadData import ImportBrowseDownloadDataWindow
 from src.frontend.importCaseData import ImportCaseDataWindow 
 from src.frontend.searchbar import SearchBar
 from src.frontend.utils import *
-from src.frontend.wrongCaseListWidget import WrongCaseListWidget
+from src.frontend.wrongCaseListWidget import WrongCaseListWindow
+from src.frontend.importExclusiveAndBatch import ImportExclusiveAndBatchWindow
 from src.backend.read_case import *
 from src.db.init_db import init_db
 
@@ -118,6 +119,10 @@ class MainWindow(QWidget):
         set_button_style(self.royalty_button)
         self.royalty_button.clicked.connect(self.import_royalty)
         
+        self.otherSchool_button = QPushButton("导入学校案例批次")
+        set_button_style(self.otherSchool_button)
+        self.otherSchool_button.clicked.connect(self.import_other_school)
+        
         line2 = QFrame()
         line2.setFrameShape(QFrame.HLine)
         line2.setFrameShadow(QFrame.Sunken)
@@ -135,6 +140,7 @@ class MainWindow(QWidget):
         button_layout.addWidget(self.import_bd_button)
         button_layout.addWidget(line)
         button_layout.addWidget(self.royalty_button)
+        button_layout.addWidget(self.otherSchool_button)
         button_layout.addWidget(line2)
         button_layout.addWidget(self.migrate_button)
         button_layout.addWidget(self.export_button)
@@ -186,10 +192,10 @@ class MainWindow(QWidget):
                 wrong_cases = cases_dict_to_widget_list(wrong_cases)
                 
                 if not self.wrong_case_list_widget:
-                    self.wrong_case_list_widget = WrongCaseListWidget(wrong_cases)
+                    self.wrong_case_list_widget = WrongCaseListWindow(wrong_cases)
                 else:
                     self.wrong_case_list_widget.close()     # 关闭之前的窗口
-                    self.wrong_case_list_widget = WrongCaseListWidget(wrong_cases)
+                    self.wrong_case_list_widget = WrongCaseListWindow(wrong_cases)
                 self.wrong_case_list_widget.show()
             
         elif type == 'browse_download':
@@ -197,9 +203,14 @@ class MainWindow(QWidget):
             self.import_window.show()
     
     def import_royalty(self):
-        self.royalty_data = load_data(self)
-        if self.royalty_data is None:
-            return
+        # self.royalty_data = load_data(self)
+        # if self.royalty_data is None:
+        #     return
+        pass
+        
+    def import_other_school(self):    
+        self.import_other_school_window = ImportExclusiveAndBatchWindow()
+        self.import_other_school_window.show()
     
     def import_migration_data(self):
         # self.migration_data = load_data(self)

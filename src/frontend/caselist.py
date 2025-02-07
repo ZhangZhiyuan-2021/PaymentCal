@@ -36,7 +36,7 @@ class CaseItemDelegate(QStyledItemDelegate):
     def paint(self, painter, option, index):
         case = index.data(Qt.DisplayRole)
         if case:
-            painter.save()
+            # painter.save()
 
             rect = option.rect.adjusted(20, 20, -20, -20)  # 设置内边距
             text_width = option.rect.width() - 40  # 让文本适应 `QListView`
@@ -66,7 +66,7 @@ class CaseItemDelegate(QStyledItemDelegate):
             painter.restore()
             
             matched_height = -5
-            if case.get("matched_str", ""):
+            if case.get("matched_str", "") != "":
                 matched_doc = QTextDocument()
                 matched_doc.setTextWidth(text_width)
                 matched_doc.setHtml(f"""
@@ -116,7 +116,7 @@ class CaseItemDelegate(QStyledItemDelegate):
             title_height = title_doc.documentLayout().documentSize().height()
             
             matched_height = -5
-            if case.get("matched_str", ""):
+            if case.get("matched_str", "") != "":
                 matched_doc = QTextDocument()
                 matched_doc.setTextWidth(content_width)
                 matched_doc.setHtml(f"""
