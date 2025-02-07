@@ -267,11 +267,16 @@ class MainWindow(QWidget):
         search_text = self.search_bar.get_text()
         print(f"搜索内容: {search_text}")
         
-        similar_cases = getSimilarCases(search_text)
-        
+        matched_strs, similar_cases = zip(*getSimilarCases(search_text))
+         
         if len(similar_cases) > 0:
             similar_caseslist = cases_class_to_widget_list(similar_cases)
             self.case_list_model.update_data(similar_caseslist)
+            
+            for row in range(self.case_list_model.rowCount()):
+                _case = self.case_list_model.data(self.case_list_model.index(row, 0), Qt.DisplayRole)
+                _case["matched_str"] = f"匹配项：{matched_strs[row]}"
+            self.case_list_model.layoutChanged.emit()
         else:
             self.case_list_model.update_data([])
 

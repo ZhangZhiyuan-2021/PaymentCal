@@ -11,6 +11,8 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from src.db.init_db import CopyrightOwner, Case, BrowsingRecord, DownloadRecord, HuaTuData, Payment
 
+if_echo = False
+
 # 读案例列表
 def readCaseList(path):
     # 读取 Excel 文件，过滤“已入库”的记录
@@ -18,7 +20,7 @@ def readCaseList(path):
     data_dict_list = [r for r in df.to_dict(orient='records') if r.get('案例状态') == '已入库']
     wrong_cases = []
 
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -30,8 +32,8 @@ def readCaseList(path):
     cases_by_name_and_alias = {}
     for case in all_cases:
         name_and_alias = list(set(json.loads(case.alias) + [case.name]))
-        for name in name_and_alias:
-            cases_by_name_and_alias[name] = case
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
     cases_by_submission = {}
     for case in all_cases:
         cases_by_submission.setdefault(case.submission_number, []).append(case)
@@ -44,7 +46,7 @@ def readCaseList(path):
     for data_dict in data_dict_list:
         # 检查必填字段
         if (pd.isna(data_dict.get('案例标题')) or data_dict.get('案例标题').strip() == '' or
-            pd.isna(data_dict.get('投稿编号')) or data_dict.get('投稿编号').strip() == '' or
+            pd.isna(data_dict.get('投稿编号')) or str(data_dict.get('投稿编号')).strip() == '' or
             pd.isna(data_dict.get('案例版权')) or data_dict.get('案例版权').strip() == '' or
             pd.isna(data_dict.get('发布时间')) or data_dict.get('发布时间').strip() == '' or
             pd.isna(data_dict.get('创建时间')) or data_dict.get('创建时间').strip() == ''):
@@ -82,7 +84,7 @@ def readCaseList(path):
                     alias_list = json.loads(case.alias)
                     if case_title not in alias_list:
                         alias_list.append(case_title)
-                        case.alias = json.dumps(alias_list)
+                        case.alias = json.dumps(alias_list, ensure_ascii=False)
                     # 更新其他字段
                     case.name = case_title
                     case.type = data_dict.get('产品类型')
@@ -118,10 +120,10 @@ def readCaseList(path):
                 print("发布时间解析错误", data_dict['发布时间'])
                 wrong_cases.append(data_dict)
                 continue
-        if '别名' in data_dict[0]:
-            alias = json.dumps(list(data_dict['别名'].split('，')))
+        if '别名' in data_dict:
+            alias = json.dumps(list(data_dict['别名'].split('，')), ensure_ascii=False)
         else:
-            alias = json.dumps([case_title])
+            alias = json.dumps([case_title], ensure_ascii=False)
         case = Case(
             name=case_title,
             alias=alias,
@@ -159,7 +161,7 @@ def readCaseExclusiveAndBatch(path, owner_name, batch):
     missingInformationCases = []
     wrong_cases = []
 
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -174,8 +176,8 @@ def readCaseExclusiveAndBatch(path, owner_name, batch):
     cases_by_name_and_alias = {}
     for case in all_cases:
         name_and_alias = list(set(json.loads(case.alias) + [case.name]))
-        for name in name_and_alias:
-            cases_by_name_and_alias[name] = case
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
 
     if '中国人民大学' in owner_name:
         is_exclusive = False
@@ -204,7 +206,7 @@ def readCaseExclusiveAndBatch(path, owner_name, batch):
     return missingInformationCases, wrong_cases
 
 def getCopyrightOwner(name):
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -218,7 +220,7 @@ def getCopyrightOwner(name):
     return owner
 
 def getAllCopyrightOwners():
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -229,7 +231,7 @@ def getAllCopyrightOwners():
     return owners
 
 def updateCopyrightOwner(name, new_name):
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -246,7 +248,7 @@ def updateCopyrightOwner(name, new_name):
     return owner
 
 def deleteCopyrightOwner(name):
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -262,7 +264,7 @@ def deleteCopyrightOwner(name):
     return owner
 
 def deleteAllCopyrightOwners():
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -273,7 +275,7 @@ def deleteAllCopyrightOwners():
 
 # 给定案例名，返回案例所有属性
 def getCase(name):
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -281,8 +283,8 @@ def getCase(name):
     cases_by_name_and_alias = {}
     for case in all_cases:
         name_and_alias = list(set(json.loads(case.alias) + [case.name]))
-        for name in name_and_alias:
-            cases_by_name_and_alias[name] = case
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
     name = name.replace(' ', '').replace('　', '')
     case = cases_by_name_and_alias.get(name)
     if not case:
@@ -294,7 +296,7 @@ def getCase(name):
     return case
 
 def getSimilarCases(name):
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -304,8 +306,8 @@ def getSimilarCases(name):
     cases_by_name_and_alias = {}
     for case in all_cases:
         name_and_alias = list(set(json.loads(case.alias) + [case.name]))
-        for name in name_and_alias:
-            cases_by_name_and_alias[name] = case
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
     similar_case_names = process.extract(name.replace(' ', '').replace('　', ''), cases_by_name_and_alias.keys(), limit=10)
     similar_cases = []
     for similar_case_name in similar_case_names:
@@ -317,7 +319,7 @@ def getSimilarCases(name):
     return similar_cases
 
 def getAllCases():
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -329,18 +331,23 @@ def getAllCases():
 
 # 设置alias，则添加别名；其他则是更新属性
 def updateCase(name, alias=None, submission_number=None, type=None, release_time=None, create_time=None, is_micro=None, is_exclusive=None, batch=None, submission_source=None, contain_TN=None, is_adapted_from_text=None, owner_name=None):
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
+    
+    print(name, alias)
 
     all_cases = session.query(Case).all() 
     cases_by_name_and_alias = {}
     for case in all_cases:
         name_and_alias = list(set(json.loads(case.alias) + [case.name]))
-        for name in name_and_alias:
-            cases_by_name_and_alias[name] = case
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
     name = name.replace(' ', '').replace('　', '')
     case = cases_by_name_and_alias.get(name)
+    
+    print(name, alias, case)
+    
     if not case:
         print('案例不存在', name)
         return None
@@ -383,7 +390,7 @@ def updateCase(name, alias=None, submission_number=None, type=None, release_time
     return case
 
 def deleteAlias(name, alias):
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -391,8 +398,8 @@ def deleteAlias(name, alias):
     cases_by_name_and_alias = {}
     for case in all_cases:
         name_and_alias = list(set(json.loads(case.alias) + [case.name]))
-        for name in name_and_alias:
-            cases_by_name_and_alias[name] = case
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
     name = name.replace(' ', '').replace('　', '')
     case = cases_by_name_and_alias.get(name)
     if not case:
@@ -406,7 +413,7 @@ def deleteAlias(name, alias):
         return None
 
     alias_list.remove(alias)
-    case.alias = json.dumps(alias_list)
+    case.alias = json.dumps(alias_list, ensure_ascii=False)
 
     session.commit()
     session.close()
@@ -414,7 +421,7 @@ def deleteAlias(name, alias):
     return case
 
 def deleteCase(name):
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -422,8 +429,8 @@ def deleteCase(name):
     cases_by_name_and_alias = {}
     for case in all_cases:
         name_and_alias = list(set(json.loads(case.alias) + [case.name]))
-        for name in name_and_alias:
-            cases_by_name_and_alias[name] = case
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
     name = name.replace(' ', '').replace('　', '')
     case = cases_by_name_and_alias.get(name)
     if not case:
@@ -437,7 +444,7 @@ def deleteCase(name):
     return case
 
 def deleteAllCases():
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -448,7 +455,7 @@ def deleteAllCases():
 
 # 导出xlsx
 def exportCaseList(path):
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -483,7 +490,7 @@ def readBrowsingAndDownloadRecord_Tsinghua(path):
     downloadSheets = [s for s in xls.sheet_names if '下载记录' in s]
 
     # 创建数据库连接与会话
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -498,8 +505,8 @@ def readBrowsingAndDownloadRecord_Tsinghua(path):
     cases_by_name_and_alias = {}
     for case in all_cases:
         name_and_alias = list(set(json.loads(case.alias) + [case.name]))
-        for name in name_and_alias:
-            cases_by_name_and_alias[name] = case
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
 
     # 收集待插入的记录列表，减少频繁 commit
     new_browsing_records = []
@@ -680,7 +687,7 @@ def readBrowsingAndDownloadRecord_Tsinghua(path):
             wrongBrowsingRecords, wrongDownloadRecords)
 
 def getBrowsingRecord(case_name, browser=None, browser_institution=None, datetime=None, is_valid=None):
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -688,8 +695,8 @@ def getBrowsingRecord(case_name, browser=None, browser_institution=None, datetim
     cases_by_name_and_alias = {}
     for case in all_cases:
         name_and_alias = list(set(json.loads(case.alias) + [case.name]))
-        for name in name_and_alias:
-            cases_by_name_and_alias[name] = case
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
     case_name = case_name.replace(' ', '').replace('　', '')
     case = cases_by_name_and_alias.get(case_name)
     if not case:
@@ -715,7 +722,7 @@ def getBrowsingRecord(case_name, browser=None, browser_institution=None, datetim
     return browsing_records
 
 def getAllBrowsingRecords():
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -726,7 +733,7 @@ def getAllBrowsingRecords():
     return browsing_records
 
 def deleteBrowsingRecord(case_name, browser=None, browser_institution=None, datetime=None, is_valid=None):
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -734,8 +741,8 @@ def deleteBrowsingRecord(case_name, browser=None, browser_institution=None, date
     cases_by_name_and_alias = {}
     for case in all_cases:
         name_and_alias = list(set(json.loads(case.alias) + [case.name]))
-        for name in name_and_alias:
-            cases_by_name_and_alias[name] = case
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
     case_name = case_name.replace(' ', '').replace('　', '')
     case = cases_by_name_and_alias.get(case_name)
     if not case:
@@ -764,7 +771,7 @@ def deleteBrowsingRecord(case_name, browser=None, browser_institution=None, date
     return browsing_records
 
 def deleteAllBrowsingRecords():
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -774,7 +781,7 @@ def deleteAllBrowsingRecords():
     session.close()
 
 def getDownloadRecord(case_name, downloader=None, downloader_institution=None, datetime=None, is_valid=None):
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -782,8 +789,8 @@ def getDownloadRecord(case_name, downloader=None, downloader_institution=None, d
     cases_by_name_and_alias = {}
     for case in all_cases:
         name_and_alias = list(set(json.loads(case.alias) + [case.name]))
-        for name in name_and_alias:
-            cases_by_name_and_alias[name] = case
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
     case_name = case_name.replace(' ', '').replace('　', '')
     case = cases_by_name_and_alias.get(case_name)
     if not case:
@@ -809,7 +816,7 @@ def getDownloadRecord(case_name, downloader=None, downloader_institution=None, d
     return download_records
 
 def getAllDownloadRecords():
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -820,7 +827,7 @@ def getAllDownloadRecords():
     return download_records
 
 def deleteDownloadRecord(case_name, downloader=None, downloader_institution=None, datetime=None, is_valid=None):
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -828,8 +835,8 @@ def deleteDownloadRecord(case_name, downloader=None, downloader_institution=None
     cases_by_name_and_alias = {}
     for case in all_cases:
         name_and_alias = list(set(json.loads(case.alias) + [case.name]))
-        for name in name_and_alias:
-            cases_by_name_and_alias[name] = case
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
     case_name = case_name.replace(' ', '').replace('　', '')
     case = cases_by_name_and_alias.get(case_name)
     if not case:
@@ -858,7 +865,7 @@ def deleteDownloadRecord(case_name, downloader=None, downloader_institution=None
     return download_records
 
 def deleteAllDownloadRecords():
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -868,7 +875,7 @@ def deleteAllDownloadRecords():
     session.close()
 
 def exportBrowsingAndDownloadRecord(path):
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -908,7 +915,7 @@ def readBrowsingAndDownloadData_HuaTu(path, year):
     df = pd.read_excel(path)
     data_dict_list = df.to_dict(orient='records')
 
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -921,16 +928,16 @@ def readBrowsingAndDownloadData_HuaTu(path, year):
     cases_by_name_and_alias = {}
     for case in all_cases:
         name_and_alias = list(set(json.loads(case.alias) + [case.name]))
-        for name in name_and_alias:
-            cases_by_name_and_alias[name] = case
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
 
     # -------------------------------
     # 遍历 Excel 数据，更新或新增 HuaTuData
     for data_dict in data_dict_list:
         # 检查必填字段
         if (pd.isna(data_dict.get('标题')) or data_dict.get('标题').strip() == '' or
-            pd.isna(data_dict.get('邮件数')) or data_dict.get('邮件数').strip() == '' or
-            pd.isna(data_dict.get('查看数')) or data_dict.get('查看数').strip() == ''):
+            pd.isna(data_dict.get('邮件数')) or str(data_dict.get('邮件数')).strip() == '' or
+            pd.isna(data_dict.get('查看数')) or str(data_dict.get('查看数')).strip() == ''):
             missingInformationData.append(data_dict)
             continue
 
@@ -967,7 +974,7 @@ def readBrowsingAndDownloadData_HuaTu(path, year):
     return missingInformationData, wrongData
 
 def addBrowsingAndDownloadData_HuaTu(case_name, year, views, downloads):
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -975,8 +982,8 @@ def addBrowsingAndDownloadData_HuaTu(case_name, year, views, downloads):
     cases_by_name_and_alias = {}
     for case in all_cases:
         name_and_alias = list(set(json.loads(case.alias) + [case.name]))
-        for name in name_and_alias:
-            cases_by_name_and_alias[name] = case
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
     case_name = case_name.replace(' ', '').replace('　', '')
     case = cases_by_name_and_alias.get(case_name)
     if not case:
@@ -1004,7 +1011,7 @@ def addBrowsingAndDownloadData_HuaTu(case_name, year, views, downloads):
     return huatu_data
 
 def getHuaTuYearData():
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -1015,7 +1022,7 @@ def getHuaTuYearData():
     return huatu_data
 
 def getHuaTuData(case_name, year=None, views=None, downloads=None):
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -1023,8 +1030,8 @@ def getHuaTuData(case_name, year=None, views=None, downloads=None):
     cases_by_name_and_alias = {}
     for case in all_cases:
         name_and_alias = list(set(json.loads(case.alias) + [case.name]))
-        for name in name_and_alias:
-            cases_by_name_and_alias[name] = case
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
     case_name = case_name.replace(' ', '').replace('　', '')
     case = cases_by_name_and_alias.get(case_name)
     if not case:
@@ -1048,7 +1055,7 @@ def getHuaTuData(case_name, year=None, views=None, downloads=None):
     return huatu_data
 
 def getAllHuaTuData():
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -1059,7 +1066,7 @@ def getAllHuaTuData():
     return huatu_data
 
 def updateHuaTuData(case_name, year, views=None, downloads=None):
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -1067,8 +1074,8 @@ def updateHuaTuData(case_name, year, views=None, downloads=None):
     cases_by_name_and_alias = {}
     for case in all_cases:
         name_and_alias = list(set(json.loads(case.alias) + [case.name]))
-        for name in name_and_alias:
-            cases_by_name_and_alias[name] = case
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
     case_name = case_name.replace(' ', '').replace('　', '')
     case = cases_by_name_and_alias.get(case_name)
     if not case:
@@ -1095,7 +1102,7 @@ def updateHuaTuData(case_name, year, views=None, downloads=None):
     return huatu_data
 
 def deleteHuaTuData(case_name, year=None, views=None, downloads=None):
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -1103,8 +1110,8 @@ def deleteHuaTuData(case_name, year=None, views=None, downloads=None):
     cases_by_name_and_alias = {}
     for case in all_cases:
         name_and_alias = list(set(json.loads(case.alias) + [case.name]))
-        for name in name_and_alias:
-            cases_by_name_and_alias[name] = case
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
     case_name = case_name.replace(' ', '').replace('　', '')
     case = cases_by_name_and_alias.get(case_name)
     if not case:
@@ -1131,7 +1138,7 @@ def deleteHuaTuData(case_name, year=None, views=None, downloads=None):
     return huatu_data
 
 def deleteAllHuaTuData():
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -1141,7 +1148,7 @@ def deleteAllHuaTuData():
     session.close()
 
 def exportHuaTuData(path, year=None):
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=True)
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
     Session = sessionmaker(bind=engine)
     session = Session()
 

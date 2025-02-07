@@ -303,6 +303,7 @@ class ImportBrowseDownloadDataWindow(QWidget):
             if len(self.matching_case_dict) == self.unmatched_case_num:
                 for key, value in self.matching_case_dict.items():
                     updateCase(value, alias=key)
+                # TODO 添加浏览记录和下载记录到数据库
         else:
             self.huatu_year = self.year_input.text()
             if self.huatu_year == "":
@@ -321,7 +322,7 @@ class ImportBrowseDownloadDataWindow(QWidget):
         """搜索按钮点击事件"""
         keyword = self.search_input.get_text()
         print(f"搜索关键词: {keyword}")
-        similar_cases = getSimilarCases(keyword)
+        matched_strs, similar_cases = zip(*getSimilarCases(keyword))
         
         if len(similar_cases) > 0:
             similar_caseslist = cases_class_to_widget_list(similar_cases)
@@ -333,6 +334,8 @@ class ImportBrowseDownloadDataWindow(QWidget):
                 _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
                 if _case:
                     _case["highlighted"] = False
+                    
+                _case['matched_str'] = f"匹配项：{matched_strs[row]}"
             # 如果当前case已经匹配，则高亮search_results_model中对应的case
             if self.current_unmatched_case in self.matching_case_dict:
                 for row in range(self.search_results_model.rowCount()):

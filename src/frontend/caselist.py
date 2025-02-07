@@ -64,6 +64,24 @@ class CaseItemDelegate(QStyledItemDelegate):
             painter.translate(title_rect.topLeft())
             title_doc.drawContents(painter)
             painter.restore()
+            
+            matched_height = -5
+            if case.get("matched_str", ""):
+                matched_doc = QTextDocument()
+                matched_doc.setTextWidth(text_width)
+                matched_doc.setHtml(f"""
+                    <span style="font-family: Arial; font-size: 10pt; color: rgb(155, 101, 223);">
+                        {case.get("matched_str", "")}
+                    </span>
+                """)
+                
+                matched_height = matched_doc.documentLayout().documentSize().height()
+                matched_pos = rect.adjusted(0, int(title_height) + 5, 0, 0)
+            
+                painter.save()
+                painter.translate(matched_pos.topLeft())
+                matched_doc.drawContents(painter)
+                painter.restore()
 
             # 使用 QTextDocument 渲染内容
             content_doc = QTextDocument()
@@ -75,10 +93,11 @@ class CaseItemDelegate(QStyledItemDelegate):
             """)
             
             content_height = content_doc.documentLayout().documentSize().height()
-            content_pos = rect.adjusted(0, int(title_height) + 5, 0, 0)  # 让内容在标题下方
+            content_pos = rect.adjusted(0, int(title_height) + int(matched_height) + 10, 0, 0)  # 让内容在匹配文本下方
+            
+            painter.save()
             painter.translate(content_pos.topLeft())
             content_doc.drawContents(painter)
-            
             painter.restore()
 
     def sizeHint(self, option, index):
@@ -95,6 +114,17 @@ class CaseItemDelegate(QStyledItemDelegate):
                 </span>
             """)
             title_height = title_doc.documentLayout().documentSize().height()
+            
+            matched_height = -5
+            if case.get("matched_str", ""):
+                matched_doc = QTextDocument()
+                matched_doc.setTextWidth(content_width)
+                matched_doc.setHtml(f"""
+                    <span style="font-family: Arial; font-size: 10pt; color: rgb(186, 85, 211);">
+                        {case.get("matched_str", "")}
+                    </span>
+                """)
+                matched_height = matched_doc.documentLayout().documentSize().height()
 
             # 使用 QTextDocument 计算内容高度
             content_doc = QTextDocument()
@@ -106,7 +136,7 @@ class CaseItemDelegate(QStyledItemDelegate):
             """)
             content_height = content_doc.documentLayout().documentSize().height()
 
-            total_height = math.ceil(title_height + content_height + 40 + 5)  # 标题 + 内容 + 内边距
+            total_height = math.ceil(title_height + matched_height + content_height + 40 + 10)  # 标题 + 内容 + 内边距
             return QSize(option.rect.width(), total_height)
         return QSize(300, 50)  # 默认大小
 
