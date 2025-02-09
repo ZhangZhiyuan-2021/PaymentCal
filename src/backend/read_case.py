@@ -1244,7 +1244,7 @@ def calculatePayment(year, total_payment):
 
     for year_payment in session.query(PaymentCalculatedYear).all():
         if not year_payment.new_case_number:
-            year_payment.new_case_number = sum(1 for case in all_cases if case.release_time.year == int(year))
+            year_payment.new_case_number = sum(1 for case in all_cases if case.release_time.year == year_payment.year)
 
     # TODO 计算版税
     def calculatePaymentA(case):
