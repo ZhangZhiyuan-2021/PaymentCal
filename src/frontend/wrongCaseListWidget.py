@@ -21,9 +21,9 @@ class WrongCaseListWidget(QWidget):
         self.initUI()
 
     def initUI(self):
-        self.setWindowTitle(" ")
-        self.setWindowIcon(QIcon("img/tsinghua.ico"))
-        self.setGeometry(600, 100, 1000, 700)
+        # self.setWindowTitle(" ")
+        # self.setWindowIcon(QIcon("img/tsinghua.ico"))
+        # self.setGeometry(600, 100, 1000, 700)
         
         layout = QVBoxLayout()
         layout.setSpacing(20)
@@ -68,3 +68,14 @@ class WrongCaseListWidget(QWidget):
                 _case["highlighted"] = False
         case["highlighted"] = True
         self.wrong_case_model.layoutChanged.emit()
+
+class WrongCaseListWindow(WrongCaseListWidget):
+    def __init__(self, wrong_cases):
+        super().__init__(wrong_cases)
+
+        self.initUI()
+        
+    def initUI(self):
+        self.setWindowTitle(" ")
+        self.setWindowIcon(QIcon("img/tsinghua.ico"))
+        self.setGeometry(600, 100, 1000, 700)
