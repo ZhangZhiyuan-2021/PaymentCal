@@ -4,7 +4,7 @@ from src.frontend.main import app
 
 def main():
     init_db()
-    app()
+    # app()
     # readCaseList('data/test.xls')
     # # readCaseList('data/testCaseList.xlsx')
     # readBrowsingAndDownloadRecord_Tsinghua('data/testTsinghua.xls')
