@@ -128,7 +128,7 @@ def readCaseList(path):
             release_time=release_time,
             create_time=create_time,
             is_micro=True if data_dict.get('是否微案例') == '是' else False,
-            is_exclusive = True, # 默认全为独家案例，从人大案例列表中获取非独家信息
+            is_exclusive = True, # 默认全为独家案例，从人大及浙大案例列表中获取非独家信息
             batch = 0,
             submission_source=data_dict.get('投稿来源'),
             contain_TN=True if data_dict.get('是否含有教学说明') == '是' else False,
@@ -175,10 +175,8 @@ def readCaseExclusiveAndBatch(path, owner_name, batch):
         for name_or_alias in name_and_alias:
             cases_by_name_and_alias[name_or_alias] = case
 
-    if '中国人民大学' in owner_name:
+    if '中国人民大学' in owner_name or '浙江大学' in owner_name:
         is_exclusive = False
-    elif '浙江大学' in owner_name:
-        is_exclusive = True
 
     for data_dict in data_dict_list:
         if pd.isna(data_dict.get(title)) or data_dict.get(title).strip() == '':
@@ -1160,7 +1158,7 @@ def exportHuaTuData(path, year=None):
     session.close()
 
 # TODO 打包之前删去 print
-def calculatePayment(year, total_payment):
+def calculatePayment(year, total_payment, process_views):
     # 判断清华记录有效性（浏览和下载分别处理）
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
     Session = sessionmaker(bind=engine)
@@ -1239,26 +1237,48 @@ def calculatePayment(year, total_payment):
             payment.views = views
             payment.downloads = downloads
 
+    cases_by_year = {}
+    for case in all_cases:
+        cases_by_year.setdefault(case.release_time.year, []).append(case)
+
+    year_payments = session.query(PaymentCalculatedYear).all()
+    for year_payment in year_payments:
+        year_payment.new_case_number = len(cases_by_year.get(year_payment.year)) if cases_by_year.get(year_payment.year, None) else 0
+
+    year_payment_by_year = {year_payment.year: year_payment for year_payment in year_payments}
+
     total_views = sum(payment.views for payment in all_payments if payment.year == int(year))
     total_downloads = sum(payment.downloads for payment in all_payments if payment.year == int(year))
-
-    for year_payment in session.query(PaymentCalculatedYear).all():
-        if not year_payment.new_case_number:
-            year_payment.new_case_number = sum(1 for case in all_cases if case.release_time.year == year_payment.year)
-
-    # TODO 计算版税
+    
+    weight_payment = (0.35 * year_payment_by_year.get(int(year)) + 0.3 * year_payment_by_year.get(int(year) - 1) + 0.2 * year_payment_by_year.get(int(year) - 2) + 0.1 * year_payment_by_year.get(int(year) - 3) + 0.05 * year_payment_by_year.get(int(year) - 4))
     def calculatePaymentA(case):
-        pass
+        if int(year) - case.release_time.year == 0:
+            return total_payment * 0.7 * 0.35 / weight_payment
+        elif int(year) - case.release_time.year == 1:
+            return total_payment * 0.7 * 0.3 / weight_payment
+        elif int(year) - case.release_time.year == 2:
+            return total_payment * 0.7 * 0.2 / weight_payment
+        elif int(year) - case.release_time.year == 3:
+            return total_payment * 0.7 * 0.1 / weight_payment
+        elif int(year) - case.release_time.year == 4:
+            return total_payment * 0.7 * 0.05 / weight_payment
+        else:
+            return 0
 
-    def calculatePaymentB(case):
-        pass
+    # process_views 为 1 时，按照浏览量 * 0.3 + 下载量 计算
+    # process_views 为 2 时，按照浏览量开平方 + 下载量计算
+    def calculatePaymentB(payment):
+        if process_views == 1:
+            return total_payment * 0.3 * (payment.views * 0.3 + payment.downloads) / (total_views * 0.3 + total_downloads)
+        elif process_views == 2:
+            return total_payment * 0.3 * (payment.views ** 0.5 + payment.downloads) / (total_views ** 0.5 + total_downloads)
 
     for case in all_cases:
         payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(year)), None) # 由于浏览量与下载量处的统计，这里一定能查到 payment
 
         if case.owner_name == '清华大学经济管理学院':
             A = calculatePaymentA(case)
-            B = calculatePaymentB(case)
+            B = calculatePaymentB(payment)
             
             if '独立开发' in case.submission_source:
                 prepaid_payment = 8000
@@ -1267,11 +1287,7 @@ def calculatePayment(year, total_payment):
             elif '学院外' in case.submission_source:
                 prepaid_payment = 5000
 
-            # TODO 确定规则，同时含有两特性的情况预付版税扣除是否叠加
-            if not case.contain_TN:
-                prepaid_payment = prepaid_payment * 0.5
-
-            if case.is_adapted_from_text:
+            if not case.contain_TN or case.is_adapted_from_text:
                 prepaid_payment = prepaid_payment * 0.5
 
             payment.prepaid_payment = prepaid_payment
@@ -1279,7 +1295,7 @@ def calculatePayment(year, total_payment):
             if case.release_time.year < 2015:
                 payment.real_prepaid_payment = 0
                 payment.real_renew_payment = payment.renew_payment
-                last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(year)), None)
+                last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(year) - 1), None)
                 if not last_year_payment:
                     print('案例缺少从前年份计算结果')
                     return case
@@ -1290,7 +1306,7 @@ def calculatePayment(year, total_payment):
                 payment.accumulated_payment = payment.renew_payment
             else:
                 payment.real_prepaid_payment = 0
-                last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(year)), None)
+                last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(year) - 1), None)
                 if not last_year_payment:
                     print('案例缺少从前年份计算结果')
                     return case
@@ -1300,9 +1316,10 @@ def calculatePayment(year, total_payment):
                     payment.real_renew_payment = payment.renew_payment
                 else:
                     payment.real_renew_payment = max(payment.accumulated_payment - payment.prepaid_payment, 0)
+
         elif case.owner_name == '中国人民大学商学院':
             A = calculatePaymentA(case)
-            B = calculatePaymentB(case)
+            B = calculatePaymentB(payment)
 
             if not case.is_exclusive:
                 A = A * 0.8
@@ -1312,12 +1329,12 @@ def calculatePayment(year, total_payment):
             if case.is_micro:
                 calculated_payment = calculated_payment * 0.5
             
-            payment.prepaid_payment = 4000
+            payment.prepaid_payment = 2000 if case.is_micro else 4000
             payment.renew_payment = calculated_payment
             if case.release_time.year < 2015:
                 payment.real_prepaid_payment = 0
                 payment.real_renew_payment = payment.renew_payment
-                last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(year)), None)
+                last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(year) - 1), None)
                 if not last_year_payment:
                     print('案例缺少从前年份计算结果')
                     return case
@@ -1328,7 +1345,7 @@ def calculatePayment(year, total_payment):
                 payment.accumulated_payment = payment.renew_payment
             else:
                 payment.real_prepaid_payment = 0
-                last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(year)), None)
+                last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(year) - 1), None)
                 if not last_year_payment:
                     print('案例缺少从前年份计算结果')
                     return case
@@ -1338,9 +1355,12 @@ def calculatePayment(year, total_payment):
                     payment.real_renew_payment = payment.renew_payment
                 else:
                     payment.real_renew_payment = max(payment.accumulated_payment - payment.prepaid_payment, 0)
+
         elif case.owner_name == '浙江大学管理学院':
             publish_years = int(year) - case.release_time.year + 1
+
             if case.batch == 1:
+                payment.prepaid_payment = 4400
                 if publish_years > 0 and publish_years <= 1:
                     prepaid_payment = 1000
                 elif publish_years == 2:
@@ -1352,6 +1372,7 @@ def calculatePayment(year, total_payment):
                 else:
                     prepaid_payment = 0
             elif case.batch == 2:
+                payment.prepaid_payment = 6400
                 if publish_years > 0 and publish_years <= 3:
                     prepaid_payment = 1000
                 elif publish_years == 4:
@@ -1362,21 +1383,129 @@ def calculatePayment(year, total_payment):
                     prepaid_payment = 400
                 else:
                     prepaid_payment = 0
+
             if int(year) == case.release_time.year:
                 payment.accumulated_payment = prepaid_payment
             else:
-                last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(year)), None)
+                last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(year) - 1), None)
                 if not last_year_payment:
                     print('案例缺少从前年份计算结果')
                     return case
                 payment.accumulated_payment = prepaid_payment + last_year_payment.accumulated_payment
-            payment.prepaid_payment = payment.accumulated_payment
+            
             payment.renew_payment = 0
             payment.real_prepaid_payment = prepaid_payment
             payment.real_renew_payment = 0
-            # 早于 15 年的单独判断不计算预付版税
-            # 判断是否发布时间为 year，返回预付版税和续付版税两张表
-            # 是否扣税都返回
+
+        year_payment = year_payment_by_year.get(int(year))
+        year_payment.is_calculated = True
 
     session.commit()
     session.close()
+
+def getCalculatedPaymentByYear(year):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    year_payments = session.query(Payment).filter_by(year=int(year)).all()
+    if not year_payments:
+        print('数据不存在')
+        return None
+
+    tax_deducted_result = {}
+    non_tax_deducted_result = {}
+    for payment in year_payments:
+        tax_deducted_result[payment.case_name] = {
+            'prepaid_payment': payment.prepaid_payment,
+            'renew_payment': payment.renew_payment,
+            'real_prepaid_payment': payment.real_prepaid_payment * 0.94,
+            'real_renew_payment': payment.real_renew_payment * 0.94,
+        }
+        non_tax_deducted_result[payment.case_name] = {
+            'prepaid_payment': payment.prepaid_payment,
+            'renew_payment': payment.renew_payment,
+            'real_prepaid_payment': payment.real_prepaid_payment,
+            'real_renew_payment': payment.real_renew_payment,
+        }
+
+    session.close()
+
+    return tax_deducted_result, non_tax_deducted_result
+
+def getCalculatedPaymentByCase(case_name):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    case = session.query(Case).filter_by(name=case_name).first()
+    if not case:
+        print('案例不存在')
+        return None
+    
+    payments = case.payments
+    if not payments:
+        print('数据不存在')
+        return None
+
+    tax_deducted_result = {}
+    non_tax_deducted_result = {}
+    for payment in payments:
+        tax_deducted_result[payment.year] = {
+            'prepaid_payment': payment.prepaid_payment,
+            'renew_payment': payment.renew_payment,
+            'real_prepaid_payment': payment.real_prepaid_payment * 0.94,
+            'real_renew_payment': payment.real_renew_payment * 0.94,
+        }
+        non_tax_deducted_result[payment.year] = {
+            'prepaid_payment': payment.prepaid_payment,
+            'renew_payment': payment.renew_payment,
+            'real_prepaid_payment': payment.real_prepaid_payment,
+            'real_renew_payment': payment.real_renew_payment,
+        }
+
+    session.close()
+
+    return tax_deducted_result, non_tax_deducted_result
+
+def exportCalculatedPayment(path):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    all_payments = session.query(Payment).all()
+    payment_by_year = {}
+    for payment in all_payments:
+        payment_by_year.setdefault(payment.year, []).append({
+            '案例标题': payment.case_name,
+            '出版年份': payment.case.release_time.year,
+            '总预付版税': payment.prepaid_payment,
+            '本年度续付版税': payment.renew_payment,
+            '总续付版税': payment.accumulated_payment,
+            '本年度实际应付预付版税': payment.real_prepaid_payment,
+            '本年度实际应付续付版税': payment.real_renew_payment,
+            '本年度实际应付预付版税（税后）': payment.real_prepaid_payment * 0.94,
+            '本年度实际应付续付版税（税后）': payment.real_renew_payment * 0.94,
+        })
+
+    with pd.ExcelWriter(path) as writer:
+        for year in payment_by_year:
+            df = pd.DataFrame(payment_by_year[year])
+            df.to_excel(writer, sheet_name=str(year), index=False)
+
+    session.close()
+
+def getPaymentCalculatedYear():
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    year_payments = session.query(PaymentCalculatedYear).all()
+
+    result = {}
+    for year_payment in year_payments:
+        result[year_payment.year] = year_payment.is_calculated
+
+    session.close()
+
+    return result
