@@ -3,16 +3,14 @@ from PyQt5.QtWidgets import (
     QLabel, QComboBox, QProgressBar, QSizePolicy, QSpacerItem, QFileDialog, QMessageBox,
     QLineEdit
 )
-from PyQt5.QtGui import QFont, QIcon, QIntValidator
+from PyQt5.QtGui import QFont, QIcon, QIntValidator, QPainter, QPen, QColor
 from PyQt5.QtCore import Qt, QTimer
 
-import sys
-import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from src.frontend.caselist import get_case_list_widget
 from src.frontend.searchbar import SearchBar
 from src.frontend.utils import *
 from src.frontend.wrongCaseListWidget import WrongCaseListWindow
+from src.frontend.overlayWidget import OverlayWidget
 from src.backend.read_case import *
 
 class ImportBrowseDownloadDataWindow(QWidget):
@@ -161,6 +159,42 @@ class ImportBrowseDownloadDataWindow(QWidget):
             }
         ''')
         
+        self.overlay = OverlayWidget(self)
+        
+    def resizeEvent(self, event):
+        """调整遮罩层的大小以匹配窗口"""
+        self.overlay.setGeometry(self.rect())
+        super().resizeEvent(event)  # 确保父类的 resizeEvent 也被调用
+        
+    def on_search_clicked(self):
+        """搜索按钮点击事件"""
+        keyword = self.search_input.get_text()
+        print(f"搜索关键词: {keyword}")
+        matched_strs, similar_cases = zip(*getSimilarCases(keyword))
+        
+        if len(similar_cases) > 0:
+            similar_caseslist = cases_class_to_widget_list(similar_cases)
+            self.search_results_model.update_data(similar_caseslist)
+            
+            # 如果当前case已经匹配，则高亮search_results_model中对应的case；如果未匹配，则不高亮
+            # 先恢复search_results_model中所有case的背景颜色
+            for row in range(self.search_results_model.rowCount()):
+                _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
+                if _case:
+                    _case["highlighted"] = False
+                    
+                _case['matched_str'] = f"匹配项：{matched_strs[row]}"
+            # 如果当前case已经匹配，则高亮search_results_model中对应的case
+            if self.current_unmatched_case in self.matching_case_dict:
+                for row in range(self.search_results_model.rowCount()):
+                    _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
+                    if _case and _case["title"] == self.matching_case_dict[self.current_unmatched_case]:
+                        _case["highlighted"] = True         
+            
+            self.search_results_model.layoutChanged.emit()
+        else:
+            print("未找到相关案例！")
+            self.search_results_model.update_data([])
         
     def on_unmatched_case_clicked(self, index):
         # 对应的case背景颜色改变
@@ -226,63 +260,129 @@ class ImportBrowseDownloadDataWindow(QWidget):
             print("读取文件失败")
             return
              
+        self.overlay.show_loading_animation()     
         if self.data_source == "中国工商案例库":
-            (_, _, wrongBrowsingRecords, wrongDownloadRecords) = readBrowsingAndDownloadRecord_Tsinghua(file_path)
-            # 提取wrongBrowsingRecords和wrongDownloadRecords的案例名，存储在set中
-            wrongCases = set()
-            for record in wrongBrowsingRecords:
-                wrongCases.add(record['案例名称'])
-            for record in wrongDownloadRecords:
-                wrongCases.add(record['案例名称'])
-            # 调用getCase函数返回Case全部信息对应的class
+            self.thread: LoadingUIThread = LoadingUIThread(readBrowsingAndDownloadRecord_Tsinghua, file_path)
+            self.thread.data_loaded.connect(self.readBrowsingAndDownloadRecord_Tsinghua_finished)
+            self.thread.start()
+        else:     
+            self.thread: LoadingUIThread = LoadingUIThread(readBrowsingAndDownloadData_HuaTu, file_path)
+            self.thread.data_loaded.connect(self.readBrowsingAndDownloadData_HuaTu_finished)
+            self.thread.start()
             
-            if len(wrongCases) > 0:
-                msg_box = QMessageBox()
-                msg_box.setIcon(QMessageBox.Warning)
-                msg_box.setWindowTitle(" ")
-                msg_box.setText("表格中部分案例名称无法匹配，请手动匹配！")
-                msg_box.exec_()
-                
-                wrongCaseslist = cases_name_to_widget_list(wrongCases)
-                
-                self.unmatched_casename_to_download_record_Thu = {case['案例名称']: case for case in wrongDownloadRecords}
-                self.unmatched_casename_to_browse_record_Thu = {case['案例名称']: case for case in wrongBrowsingRecords}
-                
-                self.unmatched_case_model.update_data(wrongCaseslist)
-                self.unmatched_case_model.layoutChanged.emit()
-                
-                self.unmatched_case_num = len(wrongCases)
-            else:
-                self.on_confirm_clicked()
+    def readBrowsingAndDownloadRecord_Tsinghua_finished(self, returns):       
+        (missingInformationBrowsingRecords, missingInformationDownloadRecords, 
+            wrongBrowsingRecords, wrongDownloadRecords) = returns
+        
+        if len(missingInformationBrowsingRecords) > 0 or len(missingInformationDownloadRecords) > 0:
+            QMessageBox.warning(self, "警告", "表格中信息不全！")
+            return
+        
+        # 提取wrongBrowsingRecords和wrongDownloadRecords的案例名，存储在set中
+        wrongCases = set()
+        for record in wrongBrowsingRecords:
+            wrongCases.add(record['案例名称'])
+        for record in wrongDownloadRecords:
+            wrongCases.add(record['案例名称'])
+        # 调用getCase函数返回Case全部信息对应的class
+        
+        if len(wrongCases) > 0:
+            msg_box = QMessageBox()
+            msg_box.setIcon(QMessageBox.Warning)
+            msg_box.setWindowTitle(" ")
+            msg_box.setText("表格中部分案例名称无法匹配，请手动匹配！")
+            msg_box.exec_()
             
+            wrongCaseslist = cases_name_to_widget_list(wrongCases)
+            
+            self.unmatched_casename_to_download_record_Thu = {case['案例名称']: case for case in wrongDownloadRecords}
+            self.unmatched_casename_to_browse_record_Thu = {case['案例名称']: case for case in wrongBrowsingRecords}
+            
+            self.unmatched_case_model.update_data(wrongCaseslist)
+            self.unmatched_case_model.layoutChanged.emit()
+            
+            self.unmatched_case_num = len(wrongCases)
         else:
-            missingInformationData, wrongData = readBrowsingAndDownloadData_HuaTu(file_path, year=2024)
-            if len(missingInformationData) > 0:
-                wrongcasedict = cases_huatu_to_widget_list(missingInformationData) 
-                
-                if not self.wrong_case_list_widget:
-                    self.wrong_case_list_widget = WrongCaseListWindow(wrongcasedict)
-                else:
-                    self.wrong_case_list_widget.close()  # 关闭旧的窗口，防止重复
-                    self.wrong_case_list_widget = WrongCaseListWindow(wrongcasedict)
-                self.wrong_case_list_widget.show()
-            elif len(wrongData) > 0:
-                msg_box = QMessageBox()
-                msg_box.setIcon(QMessageBox.Warning)
-                msg_box.setWindowTitle(" ")
-                msg_box.setText("表格中部分案例名称无法匹配，请手动匹配！")
-                msg_box.exec_()
-                
-                unmatchedCaseslist = cases_huatu_to_widget_list(wrongData)
-                self.unmatched_casename_to_class_dict_huatu = {case['标题']: case for case in wrongData}
-                
-                self.unmatched_case_model.update_data(unmatchedCaseslist)
-                self.unmatched_case_model.layoutChanged.emit()
-                
-                self.unmatched_case_num = len(wrongData)
+            # self.on_confirm_clicked()
+            pass
+        
+        self.overlay.setVisible(False)
+        self.overlay.timer.stop()
+        
+    def readBrowsingAndDownloadData_HuaTu_finished(self, returns):
+        (missingInformationData, wrongData) = returns
+        
+        if len(missingInformationData) > 0:
+            wrongcasedict = cases_huatu_to_widget_list(missingInformationData) 
+            
+            if not self.wrong_case_list_widget:
+                self.wrong_case_list_widget = WrongCaseListWindow(wrongcasedict)
             else:
-                self.on_confirm_clicked()
-
+                self.wrong_case_list_widget.close()  # 关闭旧的窗口，防止重复
+                self.wrong_case_list_widget = WrongCaseListWindow(wrongcasedict)
+            self.wrong_case_list_widget.show()
+        elif len(wrongData) > 0:
+            msg_box = QMessageBox()
+            msg_box.setIcon(QMessageBox.Warning)
+            msg_box.setWindowTitle(" ")
+            msg_box.setText("表格中部分案例名称无法匹配，请手动匹配！")
+            msg_box.exec_()
+            
+            unmatchedCaseslist = cases_huatu_to_widget_list(wrongData)
+            self.unmatched_casename_to_class_dict_huatu = {case['标题']: case for case in wrongData}
+            
+            self.unmatched_case_model.update_data(unmatchedCaseslist)
+            self.unmatched_case_model.layoutChanged.emit()
+            
+            self.unmatched_case_num = len(wrongData)
+        else:
+            # self.on_confirm_clicked()
+            pass
+        
+        self.overlay.setVisible(False)
+        self.overlay.timer.stop()
+    
+    def on_confirm_clicked(self):
+        """确认按钮点击事件"""
+        print(self.matching_case_dict)
+        if len(self.matching_case_dict) == 0:
+            return
+        if len(self.matching_case_dict) != self.unmatched_case_num:
+            QMessageBox.warning(self, "警告", "请先完成所有案例的匹配！")
+              
+        self.overlay.show_loading_animation()
+        self.thread: LoadingUIThread = LoadingUIThread(self.update_Records)
+        self.thread.data_loaded.connect(self.update_Records_finished)
+        self.thread.start()
+        
+    def update_Records(self):
+        if self.data_source == "中国工商案例库":
+            for key, value in self.matching_case_dict.items():
+                updateCase(value, alias=key)
+            # 添加浏览记录和下载记录到数据库
+            for key, value in self.unmatched_casename_to_download_record_Thu.items():
+                addDownloadRecord_Tsinghua(self.matching_case_dict[key], value['下载人账号'], value.get('下载人所在院校', ''), value['下载时间'])
+            for key, value in self.unmatched_casename_to_browse_record_Thu.items():
+                addBrowsingRecord_Tsinghua(self.matching_case_dict[key], value['浏览人账号'], value.get('浏览人所在院校', ''), value['浏览时间'])
+        else:
+            self.huatu_year = self.year_input.text()
+            if self.huatu_year == "":
+                QMessageBox.warning(self, "警告", "请输入年份！")
+                return
+            
+            for key, value in self.matching_case_dict.items():
+                updateCase(value, alias=key)
+            for key, value in self.unmatched_casename_to_class_dict_huatu.items():
+                addBrowsingAndDownloadData_HuaTu(self.matching_case_dict[key], self.huatu_year, value['查看数'], value['邮件数'])
+            
+        return None
+            
+    def update_Records_finished(self, returns):
+        QMessageBox.information(self, "提示", "数据导入成功！")
+        self.overlay.setVisible(False)
+        self.overlay.timer.stop()
+        self.init_list()
+            
     def on_calc_clicked(self):
         """模拟计算过程，并更新进度条"""
         if self.matching_case_num != self.unmatched_case_num:
@@ -302,65 +402,7 @@ class ImportBrowseDownloadDataWindow(QWidget):
                 print("计算完成！")
 
         QTimer.singleShot(300, update_progress)  # 开始更新进度条
-
-    def on_confirm_clicked(self):
-        """确认按钮点击事件"""
-        print(self.matching_case_dict)
-        
-        if self.data_source == "中国工商案例库":
-            if len(self.matching_case_dict) == self.unmatched_case_num:
-                for key, value in self.matching_case_dict.items():
-                    updateCase(value, alias=key)
-                # 添加浏览记录和下载记录到数据库
-                for key, value in self.unmatched_casename_to_download_record_Thu.items():
-                    addDownloadRecord_Tsinghua(self.matching_case_dict[key], value['下载人账号'], value.get('下载人所在院校', ''), value['下载时间'])
-                for key, value in self.unmatched_casename_to_browse_record_Thu.items():
-                    addBrowsingRecord_Tsinghua(self.matching_case_dict[key], value['浏览人账号'], value.get('浏览人所在院校', ''), value['浏览时间'])
-        
-        else:
-            self.huatu_year = self.year_input.text()
-            if self.huatu_year == "":
-                QMessageBox.warning(self, "警告", "请输入年份！")
-                return
-            
-            if len(self.matching_case_dict) == self.unmatched_case_num:
-                for key, value in self.matching_case_dict.items():
-                    updateCase(value, alias=key)
-                for key, value in self.unmatched_casename_to_class_dict_huatu.items():
-                    addBrowsingAndDownloadData_HuaTu(self.matching_case_dict[key], self.huatu_year, value['查看数'], value['邮件数'])
-                
-        self.init_list()
-        
-    def on_search_clicked(self):
-        """搜索按钮点击事件"""
-        keyword = self.search_input.get_text()
-        print(f"搜索关键词: {keyword}")
-        matched_strs, similar_cases = zip(*getSimilarCases(keyword))
-        
-        if len(similar_cases) > 0:
-            similar_caseslist = cases_class_to_widget_list(similar_cases)
-            self.search_results_model.update_data(similar_caseslist)
-            
-            # 如果当前case已经匹配，则高亮search_results_model中对应的case；如果未匹配，则不高亮
-            # 先恢复search_results_model中所有case的背景颜色
-            for row in range(self.search_results_model.rowCount()):
-                _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
-                if _case:
-                    _case["highlighted"] = False
-                    
-                _case['matched_str'] = f"匹配项：{matched_strs[row]}"
-            # 如果当前case已经匹配，则高亮search_results_model中对应的case
-            if self.current_unmatched_case in self.matching_case_dict:
-                for row in range(self.search_results_model.rowCount()):
-                    _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
-                    if _case and _case["title"] == self.matching_case_dict[self.current_unmatched_case]:
-                        _case["highlighted"] = True         
-            
-            self.search_results_model.layoutChanged.emit()
-        else:
-            print("未找到相关案例！")
-            self.search_results_model.update_data([])
-            
+              
     def init_list(self):
         self.matching_case_dict = {}
         self.unmatched_casename_to_class_dict_huatu = {}

@@ -11,9 +11,6 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QFont, QIcon, QIntValidator
 from PyQt5.QtCore import Qt, QTimer
 
-import sys
-import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from src.frontend.caselist import get_case_list_widget
 from src.frontend.searchbar import SearchBar
 from src.frontend.utils import *

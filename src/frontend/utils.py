@@ -1,11 +1,28 @@
 from PyQt5.QtWidgets import QFileDialog, QPushButton, QGraphicsDropShadowEffect, QComboBox, QListView, QProgressBar, QAbstractItemView
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 import pandas as pd
 
-import sys
-import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from src.db.init_db import *
+
+class LoadingUIThread(QThread):
+    data_loaded = pyqtSignal(tuple)
+    
+    def __init__(self, func, *args, **kargs):
+        super().__init__()
+        self.func = func
+        self.args = args
+        self.kargs = kargs
+
+    def run(self):
+        print("开始加载数据...")
+
+        returns = self.func(*self.args, **self.kargs)
+        if not isinstance(returns, tuple):
+            returns = (returns, )
+
+        print("数据加载完成")
+        # 数据加载完成后，发出信号通知主线程
+        self.data_loaded.emit(returns)
 
 def load_data(widget, file_path=None):
     """加载 Excel/CSV 数据并填充表格"""

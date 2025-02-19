@@ -8,9 +8,7 @@ from PyQt5.QtCore import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
 import numpy as np
-import os
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from src.frontend.caselist import get_case_list_widget
 from src.frontend.importBrowseDownloadData import ImportBrowseDownloadDataWindow
 from src.frontend.importCaseData import ImportCaseDataWindow 
@@ -18,6 +16,7 @@ from src.frontend.searchbar import SearchBar
 from src.frontend.utils import *
 from src.frontend.wrongCaseListWidget import WrongCaseListWindow
 from src.frontend.importExclusiveAndBatch import ImportExclusiveAndBatchWindow
+from src.frontend.overlayWidget import OverlayWidget
 from src.backend.read_case import *
 from src.db.init_db import init_db
 
@@ -115,9 +114,9 @@ class MainWindow(QWidget):
         line.setFrameShadow(QFrame.Sunken)
         line.setStyleSheet("color: #e0e0e0;")
         
-        self.royalty_button = QPushButton("导入历年版税")
-        set_button_style(self.royalty_button)
-        self.royalty_button.clicked.connect(self.import_royalty)
+        # self.royalty_button = QPushButton("导入历年版税")
+        # set_button_style(self.royalty_button)
+        # self.royalty_button.clicked.connect(self.import_royalty)
         
         self.otherSchool_button = QPushButton("导入学校案例批次")
         set_button_style(self.otherSchool_button)
@@ -139,7 +138,7 @@ class MainWindow(QWidget):
         button_layout.addWidget(self.import_case_button)
         button_layout.addWidget(self.import_bd_button)
         button_layout.addWidget(line)
-        button_layout.addWidget(self.royalty_button)
+        # button_layout.addWidget(self.royalty_button)
         button_layout.addWidget(self.otherSchool_button)
         button_layout.addWidget(line2)
         button_layout.addWidget(self.migrate_button)
@@ -180,6 +179,13 @@ class MainWindow(QWidget):
             }
         ''')
         
+        self.overlay = OverlayWidget(self)
+        
+    def resizeEvent(self, event):
+        """调整遮罩层的大小以匹配窗口"""
+        self.overlay.setGeometry(self.rect())
+        super().resizeEvent(event)  # 确保父类的 resizeEvent 也被调用
+        
     def open_import_window(self, type):
         if type == 'case':
             file_path, _ = QFileDialog.getOpenFileName(self, "选择文件", "", "Excel文件 (*.xls *.xlsx *.csv)")
@@ -187,20 +193,30 @@ class MainWindow(QWidget):
                 print("读取文件失败")
                 return
             
-            wrong_cases = readCaseList(file_path)
-            if len(wrong_cases) > 0:
-                wrong_cases = cases_dict_to_widget_list(wrong_cases)
-                
-                if not self.wrong_case_list_widget:
-                    self.wrong_case_list_widget = WrongCaseListWindow(wrong_cases)
-                else:
-                    self.wrong_case_list_widget.close()     # 关闭之前的窗口
-                    self.wrong_case_list_widget = WrongCaseListWindow(wrong_cases)
-                self.wrong_case_list_widget.show()
+            self.overlay.show_loading_animation()
+            self.thread: LoadingUIThread = LoadingUIThread(readCaseList, file_path)
+            self.thread.data_loaded.connect(self.load_data_finished)
+            self.thread.start()
             
         elif type == 'browse_download':
             self.import_window = ImportBrowseDownloadDataWindow()
             self.import_window.show()
+    
+    def load_data_finished(self, returns):
+        wrong_cases = returns[0]
+        
+        if len(wrong_cases) > 0:
+            wrong_cases = cases_dict_to_widget_list(wrong_cases)
+            
+            if not self.wrong_case_list_widget:
+                self.wrong_case_list_widget = WrongCaseListWindow(wrong_cases)
+            else:
+                self.wrong_case_list_widget.close()     # 关闭之前的窗口
+                self.wrong_case_list_widget = WrongCaseListWindow(wrong_cases)
+            self.wrong_case_list_widget.show()
+            
+        self.overlay.setVisible(False)
+        self.overlay.timer.stop()
     
     def import_royalty(self):
         # self.royalty_data = load_data(self)

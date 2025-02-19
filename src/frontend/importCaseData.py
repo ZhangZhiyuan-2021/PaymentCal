@@ -1,3 +1,5 @@
+# 不再使用
+
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, 
     QLabel, QComboBox, QProgressBar, QSizePolicy, QSpacerItem, QFileDialog, QMessageBox
@@ -5,12 +7,10 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtCore import Qt, QTimer
 
-import sys
-import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from src.frontend.caselist import get_case_list_widget
 from src.frontend.searchbar import SearchBar
 from src.frontend.utils import *
+from src.frontend.overlayWidget import OverlayWidget
 from src.backend.read_case import *
 
 class ImportCaseDataWindow(QWidget):
@@ -46,22 +46,11 @@ class ImportCaseDataWindow(QWidget):
         self.load_button.clicked.connect(self.on_load_data_clicked)
         
         top_layout.addWidget(self.load_button, 2)
-        
-        test_cases = [
-            {"title": "案例A", "info": "2017年入库... 其他信息"},
-            {"title": "案例B", "info": "2018年入库... 其他信息"},
-            {"title": "案例C", "info": "2019年入库... 其他信息"},
-            {"title": "案例D", "info": "2020年入库... 其他信息"}
-        ]
 
         # 匹配不上案例列表
         match_layout = QHBoxLayout()
         self.unmatched_case_model, self.unmatched_case_list_view = get_case_list_widget()
         self.unmatched_case_list_view.clicked.connect(self.on_unmatched_case_clicked)
-        # self.unmatched_case_list_view.setStyleSheet("""
-        #     border: none;
-        # """)
-    
 
         match_layout.addWidget(self.unmatched_case_list_view)
 
@@ -77,6 +66,13 @@ class ImportCaseDataWindow(QWidget):
                 background-color: #f4f4f4;
             }
         ''')
+        
+        self.overlay = OverlayWidget(self)
+        
+    def resizeEvent(self, event):
+        """调整遮罩层的大小以匹配窗口"""
+        self.overlay.setGeometry(self.rect())
+        super().resizeEvent(event)  # 确保父类的 resizeEvent 也被调用
          
     def on_unmatched_case_clicked(self, index):
         # 对应的case背景颜色改变
@@ -99,7 +95,14 @@ class ImportCaseDataWindow(QWidget):
             print("读取文件失败")
             return
 
-        wrong_cases = readCaseList(file_path)
+        self.overlay.show_loading_animation()
+        self.thread: LoadingUIThread = LoadingUIThread(readCaseList, file_path)
+        self.thread.data_loaded.connect(self.load_data_finished)
+        self.thread.start()
+            
+    def load_data_finished(self, returns):
+        wrong_cases = returns[0]
+        
         if len(wrong_cases) > 0:
             self.exist_unmatched = True
             msg_box = QMessageBox()
@@ -112,5 +115,7 @@ class ImportCaseDataWindow(QWidget):
             self.unmatched_case_model.update_data(wrong_cases)
         else:
             self.exist_unmatched = False
-                
-        # self.exist_unmatched = True
+            QMessageBox.information(self, " ", "数据加载成功！")
+            
+        self.overlay.setVisible(False)
+        self.overlay.timer.stop()

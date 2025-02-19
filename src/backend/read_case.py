@@ -484,204 +484,207 @@ def exportCaseList(path):
     session.close()
 
 def readBrowsingAndDownloadRecord_Tsinghua(path):
-    # 解析 Excel 文件及相关工作表
-    xls = pd.ExcelFile(path)
-    browsingSheets = [s for s in xls.sheet_names if '浏览记录' in s]
-    downloadSheets = [s for s in xls.sheet_names if '下载记录' in s]
+    try:
+        # 解析 Excel 文件及相关工作表
+        xls = pd.ExcelFile(path)
+        browsingSheets = [s for s in xls.sheet_names if '浏览记录' in s]
+        downloadSheets = [s for s in xls.sheet_names if '下载记录' in s]
 
-    # 创建数据库连接与会话
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
-    Session = sessionmaker(bind=engine)
-    session = Session()
+        # 创建数据库连接与会话
+        engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=if_echo)
+        Session = sessionmaker(bind=engine)
+        session = Session()
 
-    missingInformationBrowsingRecords = []
-    missingInformationDownloadRecords = []
-    wrongBrowsingRecords = []
-    wrongDownloadRecords = []
+        missingInformationBrowsingRecords = []
+        missingInformationDownloadRecords = []
+        wrongBrowsingRecords = []
+        wrongDownloadRecords = []
 
-    # 直接加载所有案例
-    all_cases = session.query(Case).all()
-    # 构建案例字典：名称 -> Case 对象
-    cases_by_name_and_alias = {}
-    for case in all_cases:
-        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
-        for name_or_alias in name_and_alias:
-            cases_by_name_and_alias[name_or_alias] = case
+        # 直接加载所有案例
+        all_cases = session.query(Case).all()
+        # 构建案例字典：名称 -> Case 对象
+        cases_by_name_and_alias = {}
+        for case in all_cases:
+            name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+            for name_or_alias in name_and_alias:
+                cases_by_name_and_alias[name_or_alias] = case
 
-    # 收集待插入的记录列表，减少频繁 commit
-    new_browsing_records = []
-    new_download_records = []
+        # 收集待插入的记录列表，减少频繁 commit
+        new_browsing_records = []
+        new_download_records = []
 
-    # --------------------
-    # 处理浏览记录
-    for sheet in browsingSheets:
-        df = xls.parse(sheet)
-        for data_dict in df.to_dict(orient='records'):
-            # 排除系统账号
-            if data_dict.get('浏览人账号') in ['admin', 'anonymous']:
-                continue
+        # --------------------
+        # 处理浏览记录
+        for sheet in browsingSheets:
+            df = xls.parse(sheet)
+            for data_dict in df.to_dict(orient='records'):
+                # 排除系统账号
+                if data_dict.get('浏览人账号') in ['admin', 'anonymous']:
+                    continue
 
-            # 检查必要字段
-            if (pd.isna(data_dict.get('案例名称')) or data_dict.get('案例名称').strip() == '' or
-                pd.isna(data_dict.get('浏览人账号')) or data_dict.get('浏览人账号').strip() == '' or
-                pd.isna(data_dict.get('浏览时间')) or data_dict.get('浏览时间').strip() == ''):
-                print('案例名称、浏览人账号、浏览时间不能为空')
-                missingInformationBrowsingRecords.append(data_dict)
-                continue
+                # 检查必要字段
+                if (pd.isna(data_dict.get('案例名称')) or data_dict.get('案例名称').strip() == '' or
+                    pd.isna(data_dict.get('浏览人账号')) or data_dict.get('浏览人账号').strip() == '' or
+                    pd.isna(data_dict.get('浏览时间')) or data_dict.get('浏览时间').strip() == ''):
+                    print('案例名称、浏览人账号、浏览时间不能为空')
+                    missingInformationBrowsingRecords.append(data_dict)
+                    continue
 
-            data_dict['案例名称'] = data_dict['案例名称'].replace(' ', '').replace('　', '')
-            # 直接从加载的案例字典中查找案例
-            case = cases_by_name_and_alias.get(data_dict['案例名称'])
-            if not case:
-                print('案例不存在', data_dict['案例名称'])
-                wrongBrowsingRecords.append(data_dict)
-                continue
+                data_dict['案例名称'] = data_dict['案例名称'].replace(' ', '').replace('　', '')
+                # 直接从加载的案例字典中查找案例
+                case = cases_by_name_and_alias.get(data_dict['案例名称'])
+                if not case:
+                    print('案例不存在', data_dict['案例名称'])
+                    wrongBrowsingRecords.append(data_dict)
+                    continue
 
-            # 解析浏览时间（仅解析一次）
-            try:
-                browsing_dt = datetime.datetime.strptime(data_dict['浏览时间'], "%Y-%m-%d %H:%M:%S")
-            except Exception as e:
-                print(f"日期解析错误: {data_dict['浏览时间']}")
-                missingInformationBrowsingRecords.append(data_dict)
-                continue
+                # 解析浏览时间（仅解析一次）
+                try:
+                    browsing_dt = datetime.datetime.strptime(data_dict['浏览时间'], "%Y-%m-%d %H:%M:%S")
+                except Exception as e:
+                    print(f"日期解析错误: {data_dict['浏览时间']}")
+                    missingInformationBrowsingRecords.append(data_dict)
+                    continue
 
-            # 检查是否已存在相同记录
-            existing = session.query(BrowsingRecord).filter_by(
-                case_name=case.name,
-                browser=data_dict['浏览人账号'],
-                datetime=browsing_dt
-            ).first()
-            if existing:
-                continue
+                # 检查是否已存在相同记录
+                existing = session.query(BrowsingRecord).filter_by(
+                    case_name=case.name,
+                    browser=data_dict['浏览人账号'],
+                    datetime=browsing_dt
+                ).first()
+                if existing:
+                    continue
 
-            record = BrowsingRecord(
-                case_name=case.name,
-                browser=data_dict['浏览人账号'], 
-                browser_institution=data_dict.get('浏览人所在院校'),
-                datetime=browsing_dt, 
-                is_valid=None
-            )
-            new_browsing_records.append(record)
+                record = BrowsingRecord(
+                    case_name=case.name,
+                    browser=data_dict['浏览人账号'], 
+                    browser_institution=data_dict.get('浏览人所在院校'),
+                    datetime=browsing_dt, 
+                    is_valid=None
+                )
+                new_browsing_records.append(record)
 
-    # 批量插入浏览记录，减少数据库交互
-    if new_browsing_records:
-        session.bulk_save_objects(new_browsing_records)
-        session.commit()
-
-    # --------------------
-    # 处理下载记录
-    for sheet in downloadSheets:
-        df = xls.parse(sheet)
-        for data_dict in df.to_dict(orient='records'):
-            if data_dict.get('下载人账号') in ['admin', 'anonymous']:
-                continue
-
-            if (pd.isna(data_dict.get('案例名称')) or data_dict.get('案例名称').strip() == '' or
-                pd.isna(data_dict.get('下载人账号')) or data_dict.get('下载人账号').strip() == '' or
-                pd.isna(data_dict.get('下载时间')) or data_dict.get('下载时间').strip() == ''):
-                print('案例名称、下载人账号、下载时间不能为空')
-                missingInformationDownloadRecords.append(data_dict)
-                continue
-
-            data_dict['案例名称'] = data_dict['案例名称'].replace(' ', '').replace('　', '')
-            case = cases_by_name_and_alias.get(data_dict['案例名称'])
-            if not case:
-                print('案例不存在', data_dict['案例名称'])
-                wrongDownloadRecords.append(data_dict)
-                continue
-
-            try:
-                download_dt = datetime.datetime.strptime(data_dict['下载时间'], "%Y-%m-%d %H:%M:%S")
-            except Exception as e:
-                print(f"日期解析错误: {data_dict['下载时间']}")
-                missingInformationDownloadRecords.append(data_dict)
-                continue
-
-            existing = session.query(DownloadRecord).filter_by(
-                case_name=case.name,
-                downloader=data_dict['下载人账号'],
-                datetime=download_dt
-            ).first()
-            if existing:
-                continue
-
-            record = DownloadRecord(
-                case_name=case.name,
-                downloader=data_dict['下载人账号'], 
-                downloader_institution=data_dict.get('下载人所在院校', ""),
-                datetime=download_dt, 
-                is_valid=None
-            )
-            new_download_records.append(record)
-
-    if new_download_records:
-        session.bulk_save_objects(new_download_records)
-        session.commit()
-
-    # --------------------
-    # 判断记录有效性（浏览和下载分别处理）
-    for case in session.query(Case).all():
-        # 浏览记录有效性判断
-        browsing_records = session.query(BrowsingRecord).filter_by(case_name=case.name).all()
-        if browsing_records:
-            browser_group = {}
-            for record in browsing_records:
-                browser_group.setdefault(record.browser, []).append(record)
-            for _, records in browser_group.items():
-                records.sort(key=lambda r: r.datetime)
-                records[0].is_valid = True
-                last_valid_datetime = records[0].datetime
-
-                for rec in records[1:]:
-                    new_semester = False
-                    if last_valid_datetime.month in [1]:
-                        if (rec.datetime.year == last_valid_datetime.year and rec.datetime.month >= 2) or (rec.datetime.year > last_valid_datetime.year):
-                            new_semester = True
-                    elif last_valid_datetime.month in [2, 3, 4, 5, 6, 7]:
-                        if (rec.datetime.year == last_valid_datetime.year and rec.datetime.month >= 8) or (rec.datetime.year > last_valid_datetime.year):
-                            new_semester = True
-                    elif last_valid_datetime.month in [8, 9, 10, 11, 12]:
-                        if (rec.datetime.year == last_valid_datetime.year + 1 and rec.datetime.month >= 2) or (rec.datetime.year > last_valid_datetime.year + 1):
-                            new_semester = True
-
-                    if new_semester and (rec.datetime - last_valid_datetime).days >= 60:
-                        rec.is_valid = True
-                        last_valid_datetime = rec.datetime
-                    else:
-                        rec.is_valid = False
+        # 批量插入浏览记录，减少数据库交互
+        if new_browsing_records:
+            session.bulk_save_objects(new_browsing_records)
             session.commit()
 
-        # # 下载记录有效性判断
-        # download_records = session.query(DownloadRecord).filter_by(case_name=case.name).all()
-        # if download_records:
-        #     downloader_group = {}
-        #     for record in download_records:
-        #         downloader_group.setdefault(record.downloader, []).append(record)
-        #     for _, records in downloader_group.items():
-        #         records.sort(key=lambda r: r.datetime)
-        #         records[0].is_valid = True
-        #         last_valid_datetime = records[0].datetime
+        # --------------------
+        # 处理下载记录
+        for sheet in downloadSheets:
+            df = xls.parse(sheet)
+            for data_dict in df.to_dict(orient='records'):
+                if data_dict.get('下载人账号') in ['admin', 'anonymous']:
+                    continue
 
-        #         for rec in records[1:]:
-        #             new_semester = False
-        #             if last_valid_datetime.month in [1]:
-        #                 if (rec.datetime.year == last_valid_datetime.year and rec.datetime.month >= 2) or (rec.datetime.year > last_valid_datetime.year):
-        #                     new_semester = True
-        #             elif last_valid_datetime.month in [2, 3, 4, 5, 6, 7]:
-        #                 if (rec.datetime.year == last_valid_datetime.year and rec.datetime.month >= 8) or (rec.datetime.year > last_valid_datetime.year):
-        #                     new_semester = True
-        #             elif last_valid_datetime.month in [8, 9, 10, 11, 12]:
-        #                 if (rec.datetime.year == last_valid_datetime.year + 1 and rec.datetime.month >= 2) or (rec.datetime.year > last_valid_datetime.year + 1):
-        #                     new_semester = True
+                if (pd.isna(data_dict.get('案例名称')) or data_dict.get('案例名称').strip() == '' or
+                    pd.isna(data_dict.get('下载人账号')) or data_dict.get('下载人账号').strip() == '' or
+                    pd.isna(data_dict.get('下载时间')) or data_dict.get('下载时间').strip() == ''):
+                    print('案例名称、下载人账号、下载时间不能为空')
+                    missingInformationDownloadRecords.append(data_dict)
+                    continue
 
-        #             if new_semester and (rec.datetime - last_valid_datetime).days >= 60:
-        #                 rec.is_valid = True
-        #                 last_valid_datetime = rec.datetime
-        #             else:
-        #                 rec.is_valid = False
-        #     session.commit()
+                data_dict['案例名称'] = data_dict['案例名称'].replace(' ', '').replace('　', '')
+                case = cases_by_name_and_alias.get(data_dict['案例名称'])
+                if not case:
+                    print('案例不存在', data_dict['案例名称'])
+                    wrongDownloadRecords.append(data_dict)
+                    continue
 
-    session.close()
+                try:
+                    download_dt = datetime.datetime.strptime(data_dict['下载时间'], "%Y-%m-%d %H:%M:%S")
+                except Exception as e:
+                    print(f"日期解析错误: {data_dict['下载时间']}")
+                    missingInformationDownloadRecords.append(data_dict)
+                    continue
+
+                existing = session.query(DownloadRecord).filter_by(
+                    case_name=case.name,
+                    downloader=data_dict['下载人账号'],
+                    datetime=download_dt
+                ).first()
+                if existing:
+                    continue
+
+                record = DownloadRecord(
+                    case_name=case.name,
+                    downloader=data_dict['下载人账号'], 
+                    downloader_institution=data_dict.get('下载人所在院校', ""),
+                    datetime=download_dt, 
+                    is_valid=None
+                )
+                new_download_records.append(record)
+
+        if new_download_records:
+            session.bulk_save_objects(new_download_records)
+            session.commit()
+
+        # --------------------
+        # 判断记录有效性（浏览和下载分别处理）
+        for case in session.query(Case).all():
+            # 浏览记录有效性判断
+            browsing_records = session.query(BrowsingRecord).filter_by(case_name=case.name).all()
+            if browsing_records:
+                browser_group = {}
+                for record in browsing_records:
+                    browser_group.setdefault(record.browser, []).append(record)
+                for _, records in browser_group.items():
+                    records.sort(key=lambda r: r.datetime)
+                    records[0].is_valid = True
+                    last_valid_datetime = records[0].datetime
+
+                    for rec in records[1:]:
+                        new_semester = False
+                        if last_valid_datetime.month in [1]:
+                            if (rec.datetime.year == last_valid_datetime.year and rec.datetime.month >= 2) or (rec.datetime.year > last_valid_datetime.year):
+                                new_semester = True
+                        elif last_valid_datetime.month in [2, 3, 4, 5, 6, 7]:
+                            if (rec.datetime.year == last_valid_datetime.year and rec.datetime.month >= 8) or (rec.datetime.year > last_valid_datetime.year):
+                                new_semester = True
+                        elif last_valid_datetime.month in [8, 9, 10, 11, 12]:
+                            if (rec.datetime.year == last_valid_datetime.year + 1 and rec.datetime.month >= 2) or (rec.datetime.year > last_valid_datetime.year + 1):
+                                new_semester = True
+
+                        if new_semester and (rec.datetime - last_valid_datetime).days >= 60:
+                            rec.is_valid = True
+                            last_valid_datetime = rec.datetime
+                        else:
+                            rec.is_valid = False
+                session.commit()
+
+            # # 下载记录有效性判断
+            # download_records = session.query(DownloadRecord).filter_by(case_name=case.name).all()
+            # if download_records:
+            #     downloader_group = {}
+            #     for record in download_records:
+            #         downloader_group.setdefault(record.downloader, []).append(record)
+            #     for _, records in downloader_group.items():
+            #         records.sort(key=lambda r: r.datetime)
+            #         records[0].is_valid = True
+            #         last_valid_datetime = records[0].datetime
+
+            #         for rec in records[1:]:
+            #             new_semester = False
+            #             if last_valid_datetime.month in [1]:
+            #                 if (rec.datetime.year == last_valid_datetime.year and rec.datetime.month >= 2) or (rec.datetime.year > last_valid_datetime.year):
+            #                     new_semester = True
+            #             elif last_valid_datetime.month in [2, 3, 4, 5, 6, 7]:
+            #                 if (rec.datetime.year == last_valid_datetime.year and rec.datetime.month >= 8) or (rec.datetime.year > last_valid_datetime.year):
+            #                     new_semester = True
+            #             elif last_valid_datetime.month in [8, 9, 10, 11, 12]:
+            #                 if (rec.datetime.year == last_valid_datetime.year + 1 and rec.datetime.month >= 2) or (rec.datetime.year > last_valid_datetime.year + 1):
+            #                     new_semester = True
+
+            #             if new_semester and (rec.datetime - last_valid_datetime).days >= 60:
+            #                 rec.is_valid = True
+            #                 last_valid_datetime = rec.datetime
+            #             else:
+            #                 rec.is_valid = False
+            #     session.commit()
+
+        session.close()      
+    except Exception as e:
+        print(f"发生错误: {e}")
 
     return (missingInformationBrowsingRecords, missingInformationDownloadRecords,
             wrongBrowsingRecords, wrongDownloadRecords)
