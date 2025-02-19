@@ -119,7 +119,7 @@ def init_db():
 
     years = session.query(PaymentCalculatedYear).all()
     years_dict = {year_item.year: year_item for year_item in years}
-    for year in range(2020, datetime.datetime.now().year + 1):
+    for year in range(2000, datetime.datetime.now().year + 1):
         if year not in years_dict:
             session.add(PaymentCalculatedYear(year=year, is_calculated=False))
     session.commit()
