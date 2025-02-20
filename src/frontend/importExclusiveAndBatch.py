@@ -4,15 +4,13 @@ from PyQt5.QtWidgets import (
     QLineEdit
 )
 from PyQt5.QtGui import QFont, QIcon, QIntValidator
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QEvent
 
-import sys
-import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from src.frontend.caselist import get_case_list_widget
 from src.frontend.searchbar import SearchBar
 from src.frontend.utils import *
 from src.frontend.wrongCaseListWidget import WrongCaseListWindow
+from src.frontend.overlayWidget import OverlayWidget
 from src.backend.read_case import *
 
 class ImportExclusiveAndBatchWindow(QWidget):
@@ -33,7 +31,16 @@ class ImportExclusiveAndBatchWindow(QWidget):
         self.matching_case_num = 0
         
         self.wrong_case_list_widget = None
+        
+        # 启用事件过滤器
+        self.installEventFilter(self)
 
+    def eventFilter(self, obj, event):
+        # 如果事件是按键事件并且按的是空格键
+        if event.type() == QEvent.KeyPress and event.key() == Qt.Key_Space:
+            return True  # 忽略空格键事件
+        return super().eventFilter(obj, event)  # 否则正常处理事件
+    
     def initUI(self):
         self.setWindowTitle(" ")
         self.setWindowIcon(QIcon("img/tsinghua.ico"))
@@ -145,8 +152,16 @@ class ImportExclusiveAndBatchWindow(QWidget):
             }
         ''')
         
+        self.overlay = OverlayWidget(self)
         
+    def resizeEvent(self, event):
+        """调整遮罩层的大小以匹配窗口"""
+        self.overlay.setGeometry(self.rect())
+        super().resizeEvent(event)  # 确保父类的 resizeEvent 也被调用
+    
     def on_unmatched_case_clicked(self, index):
+        self.unmatched_case_list_view.simulate_right_click(index)
+        
         # 对应的case背景颜色改变
         case = self.unmatched_case_model.data(index, Qt.DisplayRole)
         if not case:
@@ -175,7 +190,9 @@ class ImportExclusiveAndBatchWindow(QWidget):
         self.unmatched_case_model.layoutChanged.emit()
         self.search_results_model.layoutChanged.emit()
         self.current_unmatched_case = case["title"]
-        pass
+
+        self.search_input.set_text(case["title"])
+        self.on_search_clicked()
     
     def on_search_results_clicked(self, index):
         # 对应的case背景颜色改变
@@ -190,16 +207,22 @@ class ImportExclusiveAndBatchWindow(QWidget):
         case["highlighted"] = True
         self.search_results_model.layoutChanged.emit()
         
-        if self.current_unmatched_case != "":
+        # 如果self.matching_case_dict[self.current_unmatched_case]有值，且当前index选中了同一个case，则取消匹配
+        if self.current_unmatched_case in self.matching_case_dict and self.matching_case_dict[self.current_unmatched_case] == case["title"]:
+            del self.matching_case_dict[self.current_unmatched_case]
+            self.matching_case_num = len(self.matching_case_dict)
+            case["highlighted"] = False
+            self.search_results_model.layoutChanged.emit()
+        elif self.current_unmatched_case != "":
             self.matching_case_dict[self.current_unmatched_case] = case["title"] 
             self.matching_case_num = len(self.matching_case_dict)
 
     def on_source_selected(self, index):
         self.data_source = self.source_combo.currentText()
         if '中国人民大学' in self.data_source:
-            is_exclusive = False
+            self.is_exclusive = False
         elif '浙江大学' in self.data_source:
-            is_exclusive = True
+            self.is_exclusive = True
 
     def on_load_data_clicked(self):     
         try:
@@ -215,42 +238,60 @@ class ImportExclusiveAndBatchWindow(QWidget):
             if not file_path:
                 print("读取文件失败")
                 return
+              
+            self.overlay.show_loading_animation()
+            self.thread: LoadingUIThread = LoadingUIThread(readCaseExclusiveAndBatch, file_path, self.data_source, self.batch)
+            self.thread.data_loaded.connect(self.readCaseExclusiveAndBatch_finfished)
+            self.thread.start()        
                 
-            missingInformationCases, unmatchedCases = readCaseExclusiveAndBatch(file_path, self.data_source, self.batch)
-            
-            if len(missingInformationCases) > 0:
-                missingInformationCases_Indexes = [f"序号：{i+1}，标题缺失！" for (i, case) in enumerate(missingInformationCases)]
-                wrongcasedict = cases_name_to_widget_list(missingInformationCases_Indexes)
-            
-                if not self.wrong_case_list_widget:
-                    self.wrong_case_list_widget = WrongCaseListWindow(wrongcasedict)
-                else:
-                    self.wrong_case_list_widget.close()  # 关闭旧的窗口，防止重复
-                    self.wrong_case_list_widget = WrongCaseListWindow(wrongcasedict)
-                self.wrong_case_list_widget.show()
-                
-            elif len(unmatchedCases) > 0:
-                msg_box = QMessageBox()
-                msg_box.setIcon(QMessageBox.Warning)
-                msg_box.setWindowTitle(" ")
-                msg_box.setText("表格中部分案例名称无法匹配，请手动匹配！")
-                msg_box.exec_()
-                
-                for attr in unmatchedCases[0]:
-                    if '标题' in attr:
-                        title = attr
-                        break
-                    
-                unmatchedCases_Names = [case[title] for case in unmatchedCases]
-                unmatchedCaseslist = cases_name_to_widget_list(unmatchedCases_Names)
-                
-                self.unmatched_case_model.update_data(unmatchedCaseslist)
-                
-                self.unmatched_case_model.layoutChanged.emit()
-                self.unmatched_case_num = len(unmatchedCases_Names)
         except Exception as e:
             QMessageBox.warning(self, "错误", f"{str(e)}")
             return
+        
+    def readCaseExclusiveAndBatch_finfished(self, returns):
+        (missingInformationCases, unmatchedCases) = returns
+        
+        if len(missingInformationCases) > 0:
+            for attr in missingInformationCases[0]:
+                if '编' in attr:
+                    index_code = attr
+                    break
+            
+            missingInformationCases_Indexes = [f"编号：{case[index_code]}，标题缺失！" for case in missingInformationCases]
+            wrongcasedict = cases_name_to_widget_list(missingInformationCases_Indexes)
+        
+            if not self.wrong_case_list_widget:
+                self.wrong_case_list_widget = WrongCaseListWindow(wrongcasedict)
+            else:
+                self.wrong_case_list_widget.close()  # 关闭旧的窗口，防止重复
+                self.wrong_case_list_widget = WrongCaseListWindow(wrongcasedict)
+            self.wrong_case_list_widget.show()
+            
+        elif len(unmatchedCases) > 0:
+            msg_box = QMessageBox()
+            msg_box.setIcon(QMessageBox.Warning)
+            msg_box.setWindowTitle(" ")
+            msg_box.setText("表格中部分案例名称无法匹配，请手动匹配！")
+            msg_box.exec_()
+            
+            for attr in unmatchedCases[0]:
+                if '标题' in attr:
+                    title = attr
+                    break
+                
+            unmatchedCases_Names = [case[title] for case in unmatchedCases]
+            unmatchedCaseslist = cases_name_to_widget_list(unmatchedCases_Names)
+            
+            self.unmatched_case_model.update_data(unmatchedCaseslist)
+            
+            self.unmatched_case_model.layoutChanged.emit()
+            self.unmatched_case_num = len(unmatchedCases_Names)
+            
+        else:
+            QMessageBox.information(self, " ", "数据加载成功！")
+            
+        self.overlay.setVisible(False)
+        self.overlay.timer.stop()
 
     def on_confirm_clicked(self):
         """确认按钮点击事件"""
@@ -264,6 +305,8 @@ class ImportExclusiveAndBatchWindow(QWidget):
         
         if len(self.matching_case_dict) == self.unmatched_case_num:
             for key, value in self.matching_case_dict.items():
+                if value == "未匹配":
+                    continue
                 updateCase(value, alias=key, batch=self.batch, owner_name=self.data_source, is_exclusive=self.is_exclusive)
                 
         self.init_list()
@@ -276,16 +319,18 @@ class ImportExclusiveAndBatchWindow(QWidget):
         
         if len(similar_cases) > 0:
             similar_caseslist = cases_class_to_widget_list(similar_cases)
+            # 在similar_caseslist头部添加“不匹配”项
+            similar_caseslist.insert(0, {"title": "未匹配", "highlighted": False, "matched_str": "", "info": "如果找不到匹配项，请选择此项"})
             self.search_results_model.update_data(similar_caseslist)
             
             # 如果当前case已经匹配，则高亮search_results_model中对应的case；如果未匹配，则不高亮
-            # 先恢复search_results_model中所有case的背景颜色
-            for row in range(self.search_results_model.rowCount()):
+            # 从1开始，因为第0个是“未匹配”项
+            for row in range(1, self.search_results_model.rowCount()):
                 _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
                 if _case:
                     _case["highlighted"] = False
                     
-                _case['matched_str'] = f"匹配项：{matched_strs[row]}"
+                _case['matched_str'] = f"匹配项：{matched_strs[row-1]}"
             # 如果当前case已经匹配，则高亮search_results_model中对应的case
             if self.current_unmatched_case in self.matching_case_dict:
                 for row in range(self.search_results_model.rowCount()):

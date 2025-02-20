@@ -1,15 +1,10 @@
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, 
-    QLabel, QComboBox, QProgressBar, QSizePolicy, QSpacerItem, QFileDialog, QMessageBox
+    QWidget, QVBoxLayout, QLabel, QSizePolicy, QSpacerItem
 )
 from PyQt5.QtGui import QFont, QIcon
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt
 
-import sys
-import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from src.frontend.caselist import get_case_list_widget
-from src.frontend.searchbar import SearchBar
 from src.frontend.utils import *
 from src.backend.read_case import *
 
@@ -73,9 +68,6 @@ class WrongCaseListWindow(WrongCaseListWidget):
     def __init__(self, wrong_cases):
         super().__init__(wrong_cases)
 
-        self.initUI()
-        
-    def initUI(self):
         self.setWindowTitle(" ")
         self.setWindowIcon(QIcon("img/tsinghua.ico"))
         self.setGeometry(600, 100, 1000, 700)

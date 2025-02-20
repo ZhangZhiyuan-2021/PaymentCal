@@ -2,9 +2,13 @@ from src.backend.read_case import *
 from src.db.init_db import init_db
 from src.frontend.main import app
 
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine
+
+
 def main():
     init_db()
-    # app()
+    app()
     # readCaseList('data/test.xls')
     # # readCaseList('data/testCaseList.xlsx')
     # readBrowsingAndDownloadRecord_Tsinghua('data/testTsinghua.xls')

@@ -1,11 +1,28 @@
 from PyQt5.QtWidgets import QFileDialog, QPushButton, QGraphicsDropShadowEffect, QComboBox, QListView, QProgressBar, QAbstractItemView
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 import pandas as pd
 
-import sys
-import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from src.db.init_db import *
+
+class LoadingUIThread(QThread):
+    data_loaded = pyqtSignal(tuple)
+    
+    def __init__(self, func, *args, **kargs):
+        super().__init__()
+        self.func = func
+        self.args = args
+        self.kargs = kargs
+
+    def run(self):
+        print("开始加载数据...")
+
+        returns = self.func(*self.args, **self.kargs)
+        if not isinstance(returns, tuple):
+            returns = (returns, )
+
+        print("数据加载完成")
+        # 数据加载完成后，发出信号通知主线程
+        self.data_loaded.emit(returns)
 
 def load_data(widget, file_path=None):
     """加载 Excel/CSV 数据并填充表格"""
@@ -124,24 +141,6 @@ def set_scrollbar_style(list_view: QListView):
     
     list_view.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
     list_view.verticalScrollBar().setSingleStep(20)
-    
-def set_progressbar_style(progress_bar: QProgressBar):
-    progress_bar.setStyleSheet("""
-        QProgressBar {
-            border: 2px solid #c09cfe;  /* 进度条边框 */
-            border-radius: 8px;         /* 圆角边框 */
-            background-color: #c4b7e1;  /* 背景颜色 */
-            text-align: center;         /* 文字居中 */
-            font-size: 18px;            /* 文字大小 */
-            color: white;             /* 文字颜色 */
-            padding: 2px;
-        }
-        
-        QProgressBar::chunk {
-            background-color: #672aca;  /* 进度条颜色 */
-            border-radius: 6px;         /* 进度条圆角 */
-        }
-    """)
 
 # 添加前端展示需要的字段
 def case_dict_to_widget_list(case_dict):

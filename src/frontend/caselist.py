@@ -1,9 +1,9 @@
 import sys
 from PyQt5.QtWidgets import ( QApplication, QWidget, QVBoxLayout, QListView, QLabel, 
-    QStyledItemDelegate, QSizePolicy, QTextEdit
+    QStyledItemDelegate, QSizePolicy, QTextEdit, QMenu, QGraphicsOpacityEffect
 )
-from PyQt5.QtGui import QFontMetrics, QTextOption, QTextDocument, QFont, QColor, QBrush, QPainterPath
-from PyQt5.QtCore import Qt, QSize, QAbstractListModel, QRectF
+from PyQt5.QtGui import QFontMetrics, QTextOption, QTextDocument, QFont, QColor, QBrush, QPainterPath, QContextMenuEvent
+from PyQt5.QtCore import Qt, QSize, QAbstractListModel, QRectF, QTimer, QTime
 
 from src.frontend.utils import set_scrollbar_style
 
@@ -140,10 +140,83 @@ class CaseItemDelegate(QStyledItemDelegate):
             return QSize(option.rect.width(), total_height)
         return QSize(300, 50)  # 默认大小
 
+class CaseListView(QListView):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.fade_duration = 1000  # 总共的渐变持续时间（1秒）
+        self.fade_in_time = 500  # 前0.5秒（不透明度保持1.0）
+
+    def contextMenuEvent(self, event):
+        index = self.indexAt(event.pos())
+        if index.isValid():
+            case = index.data(Qt.DisplayRole)
+            self.copy_title_to_clipboard(case["title"])
+            
+    def simulate_right_click(self, index):
+        # 获取索引的屏幕位置（全局坐标）
+        pos = self.visualRect(index).topLeft()  # 获取索引的矩形区域的左上角坐标
+        global_pos = self.mapToGlobal(pos)  # 转换为全局坐标
+        
+        # 创建一个模拟的右键点击事件对象
+        event = QContextMenuEvent(QContextMenuEvent.Mouse, pos, global_pos, Qt.NoModifier)
+        self.contextMenuEvent(event)  # 触发原来的 contextMenuEvent 方法
+
+    def copy_title_to_clipboard(self, title):
+        clipboard = QApplication.clipboard()
+        clipboard.setText(title)
+        
+        # 显示复制成功提示
+        self.show_copy_success_tip()
+
+    def show_copy_success_tip(self):
+        tip_label = QLabel("复制成功", self)
+        tip_label.setFont(QFont("黑体", 12))
+        tip_label.setStyleSheet("background-color: rgba(112, 71, 240, 150); color: white; padding: 10px; border-radius: 5px;")
+        tip_label.setAlignment(Qt.AlignCenter)
+        tip_label.move(self.width() // 2 - tip_label.width() // 2, self.height() // 2 - tip_label.height() // 2)
+        tip_label.show()
+
+        # 使用 QGraphicsOpacityEffect 实现渐变透明效果
+        opacity_effect = QGraphicsOpacityEffect()
+        tip_label.setGraphicsEffect(opacity_effect)
+
+        # 设置初始透明度
+        opacity_effect.setOpacity(1.0)
+
+        # 定时器控制透明度渐变
+        fade_out_timer = QTimer(self)
+        fade_out_timer.timeout.connect(lambda: self.fade_out(tip_label, opacity_effect, fade_out_timer))
+        fade_out_timer.start(50)  # 每50ms更新一次透明度
+
+        # 记录开始时间
+        self.start_time = self.current_time_ms()
+
+    def fade_out(self, tip_label, opacity_effect, timer):
+        elapsed_time = self.current_time_ms() - self.start_time
+        total_time = self.fade_duration
+
+        if elapsed_time < self.fade_in_time:
+            # 前 0.5 秒，保持不变，透明度为 1.0
+            opacity_effect.setOpacity(1.0)
+        elif elapsed_time < total_time:
+            # 在后0.5秒内渐变透明度
+            progress = (elapsed_time - self.fade_in_time) / (total_time - self.fade_in_time)  # 计算剩余时间的进度
+            opacity = 1.0 - progress  # 从1.0渐变到0.0
+            opacity_effect.setOpacity(opacity)
+        else:
+            # 完成渐变，删除tip_label
+            timer.stop()
+            tip_label.deleteLater()
+
+    def current_time_ms(self):
+        """返回当前的毫秒时间戳"""
+        return int(QTime.currentTime().msecsSinceStartOfDay())
+
 def get_case_list_widget(cases = None):    
     # 返回设置好的model和view
     case_list_model = CaseListModel(cases)
-    case_list_view = QListView()
+    # case_list_view = QListView()
+    case_list_view = CaseListView()
     case_list_view.setModel(case_list_model)
     case_list_view.setItemDelegate(CaseItemDelegate())
     case_list_view.setWordWrap(True)  # 启用自动换行
