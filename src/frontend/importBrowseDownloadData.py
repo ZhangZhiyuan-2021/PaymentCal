@@ -11,6 +11,7 @@ from src.frontend.searchbar import SearchBar
 from src.frontend.utils import *
 from src.frontend.wrongCaseListWidget import WrongCaseListWindow
 from src.frontend.overlayWidget import OverlayWidget
+from src.frontend.progressBar import ProgressBar
 from src.backend.read_case import *
 
 class ImportBrowseDownloadDataWindow(QWidget):
@@ -83,6 +84,7 @@ class ImportBrowseDownloadDataWindow(QWidget):
         
         data_source_container = QWidget()
         data_source_container.setStyleSheet('margin-bottom: 10px;')
+        # data_source_container.setStyleSheet('border: 1px solid #D1C4E9; border-radius: 8px; padding: 10px;')
         data_source_layout = QHBoxLayout(data_source_container)
         data_source_layout.addWidget(label1)
         data_source_layout.addWidget(self.source_combo)
@@ -94,6 +96,9 @@ class ImportBrowseDownloadDataWindow(QWidget):
         
         top_layout.addWidget(data_source_container, 2)
         top_layout.addWidget(self.load_button, 2)
+        
+        # 读取清华浏览下载记录的进度条
+        self.load_progress_bar = ProgressBar()
 
         # 计算 & 进度条
         calc_layout = QVBoxLayout()
@@ -101,12 +106,10 @@ class ImportBrowseDownloadDataWindow(QWidget):
         self.calc_button = QPushButton("开始计算")
         set_button_style(self.calc_button, 40)
         self.calc_button.clicked.connect(self.on_calc_clicked)
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        set_progressbar_style(self.progress_bar)
+        self.calc_progress_bar = ProgressBar()
+
         calc_layout.addWidget(self.calc_button)
-        calc_layout.addWidget(self.progress_bar)
+        calc_layout.addWidget(self.calc_progress_bar)
     
 
         unmatch_label = QLabel("下方列表中的案例无法自动匹配。请按照下列步骤操作：\n1. 选择左侧列表中某个案例；\n2. 在右侧搜索框中输入关键词搜索匹配的案例；\n3. 选择右侧列表中的案例；\n4. 所有案例手动选择完成后，点击确认按钮。")
@@ -145,7 +148,7 @@ class ImportBrowseDownloadDataWindow(QWidget):
 
         # 添加组件到主布局
         layout.addLayout(top_layout, 2)
-        # layout.addWidget(self.table, 4)
+        layout.addWidget(self.load_progress_bar, 1)
         layout.addItem(QSpacerItem(0, 20, QSizePolicy.Minimum, QSizePolicy.Fixed))
         layout.addLayout(match_layout, 6)
         layout.addItem(QSpacerItem(0, 20, QSizePolicy.Minimum, QSizePolicy.Fixed))
@@ -249,8 +252,11 @@ class ImportBrowseDownloadDataWindow(QWidget):
         self.data_source = self.source_combo.currentText()
         if self.data_source == "中国工商案例库":
             self.year_input.setVisible(False)
+            self.load_progress_bar.setVisible(True)
         elif self.data_source == "华图":
             self.year_input.setVisible(True)
+            self.load_progress_bar.setVisible(False)
+        self.init_list()
 
     def on_load_data_clicked(self):     
         self.init_list()
@@ -265,6 +271,8 @@ class ImportBrowseDownloadDataWindow(QWidget):
             self.thread: LoadingUIThread = LoadingUIThread(readBrowsingAndDownloadRecord_Tsinghua, file_path)
             self.thread.data_loaded.connect(self.readBrowsingAndDownloadRecord_Tsinghua_finished)
             self.thread.start()
+            
+            
         else:     
             self.thread: LoadingUIThread = LoadingUIThread(readBrowsingAndDownloadData_HuaTu, file_path)
             self.thread.data_loaded.connect(self.readBrowsingAndDownloadData_HuaTu_finished)
@@ -389,13 +397,13 @@ class ImportBrowseDownloadDataWindow(QWidget):
             QMessageBox.warning(self, "警告", "请先完成所有案例的匹配！")
             return
         
-        self.progress_bar.setValue(0)
+        self.calc_progress_bar.setValue(0)
         self.calc_button.setEnabled(False)  # 禁用按钮，防止多次点击
 
         def update_progress():
-            current_value = self.progress_bar.value()
+            current_value = self.calc_progress_bar.value()
             if current_value < 100:
-                self.progress_bar.setValue(current_value + 10)
+                self.calc_progress_bar.setValue(current_value + 10)
                 QTimer.singleShot(300, update_progress)  # 300ms 后递归调用
             else:
                 self.calc_button.setEnabled(True)

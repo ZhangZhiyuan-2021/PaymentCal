@@ -141,24 +141,6 @@ def set_scrollbar_style(list_view: QListView):
     
     list_view.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
     list_view.verticalScrollBar().setSingleStep(20)
-    
-def set_progressbar_style(progress_bar: QProgressBar):
-    progress_bar.setStyleSheet("""
-        QProgressBar {
-            border: 2px solid #c09cfe;  /* 进度条边框 */
-            border-radius: 8px;         /* 圆角边框 */
-            background-color: #c4b7e1;  /* 背景颜色 */
-            text-align: center;         /* 文字居中 */
-            font-size: 18px;            /* 文字大小 */
-            color: white;             /* 文字颜色 */
-            padding: 2px;
-        }
-        
-        QProgressBar::chunk {
-            background-color: #672aca;  /* 进度条颜色 */
-            border-radius: 6px;         /* 进度条圆角 */
-        }
-    """)
 
 # 添加前端展示需要的字段
 def case_dict_to_widget_list(case_dict):

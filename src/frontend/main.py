@@ -259,6 +259,8 @@ class MainWindow(QWidget):
         # 重新创建数据库
         init_db()
         
+        # TODO 加载圆圈
+        
         readCaseList(caselist_path)
         readBrowsingAndDownloadRecord_Tsinghua(browse_and_download_path)
         readBrowsingAndDownloadData_HuaTu(huatu_path)
