@@ -1,16 +1,9 @@
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, 
-    QLabel, QComboBox, QProgressBar, QSizePolicy, QSpacerItem, QFileDialog, QMessageBox,
-    QLineEdit
+    QProgressBar
 )
-from PyQt5.QtGui import QFont, QIcon, QIntValidator, QPainter, QPen, QColor
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt
 
-from src.frontend.caselist import get_case_list_widget
-from src.frontend.searchbar import SearchBar
 from src.frontend.utils import *
-from src.frontend.wrongCaseListWidget import WrongCaseListWindow
-from src.frontend.overlayWidget import OverlayWidget
 from src.backend.read_case import *
 
 class ProgressBar(QProgressBar):

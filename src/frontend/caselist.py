@@ -2,7 +2,7 @@ import sys
 from PyQt5.QtWidgets import ( QApplication, QWidget, QVBoxLayout, QListView, QLabel, 
     QStyledItemDelegate, QSizePolicy, QTextEdit, QMenu, QGraphicsOpacityEffect
 )
-from PyQt5.QtGui import QFontMetrics, QTextOption, QTextDocument, QFont, QColor, QBrush, QPainterPath
+from PyQt5.QtGui import QFontMetrics, QTextOption, QTextDocument, QFont, QColor, QBrush, QPainterPath, QContextMenuEvent
 from PyQt5.QtCore import Qt, QSize, QAbstractListModel, QRectF, QTimer, QTime
 
 from src.frontend.utils import set_scrollbar_style
@@ -151,12 +151,15 @@ class CaseListView(QListView):
         if index.isValid():
             case = index.data(Qt.DisplayRole)
             self.copy_title_to_clipboard(case["title"])
-            # menu = QMenu(self)
-            # copy_action = menu.addAction("复制标题")
             
-            # # 复制标题到剪贴板
-            # copy_action.triggered.connect(lambda: self.copy_title_to_clipboard(case["title"]))
-            # menu.exec_(event.globalPos())
+    def simulate_right_click(self, index):
+        # 获取索引的屏幕位置（全局坐标）
+        pos = self.visualRect(index).topLeft()  # 获取索引的矩形区域的左上角坐标
+        global_pos = self.mapToGlobal(pos)  # 转换为全局坐标
+        
+        # 创建一个模拟的右键点击事件对象
+        event = QContextMenuEvent(QContextMenuEvent.Mouse, pos, global_pos, Qt.NoModifier)
+        self.contextMenuEvent(event)  # 触发原来的 contextMenuEvent 方法
 
     def copy_title_to_clipboard(self, title):
         clipboard = QApplication.clipboard()

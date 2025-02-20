@@ -7,6 +7,8 @@ from fuzzywuzzy import process
 import sys
 import os
 
+from PyQt5.QtCore import QThread, pyqtSignal
+
 from src.db.init_db import CopyrightOwner, Case, BrowsingRecord, DownloadRecord, HuaTuData, Payment, PaymentCalculatedYear
 
 # 读案例列表
@@ -303,6 +305,7 @@ def getSimilarCases(name):
         for name_or_alias in name_and_alias:
             cases_by_name_and_alias[name_or_alias] = case
     similar_case_names = process.extract(name.replace(' ', '').replace('　', ''), cases_by_name_and_alias.keys(), limit=10)
+    print(similar_case_names)
     similar_cases = []
     for similar_case_name in similar_case_names:
         similar_case = cases_by_name_and_alias.get(similar_case_name[0])
@@ -474,143 +477,179 @@ def exportCaseList(path):
 
     session.close()
 
-def readBrowsingAndDownloadRecord_Tsinghua(path):
-    # 解析 Excel 文件及相关工作表
-    xls = pd.ExcelFile(path)
-    browsingSheets = [s for s in xls.sheet_names if '浏览记录' in s]
-    downloadSheets = [s for s in xls.sheet_names if '下载记录' in s]
+class ReadTsinghuaBrowsingAndDownloadThread(QThread):
+    result = pyqtSignal(tuple)
+    progress = pyqtSignal(int)
+    
+    def __init__(self, path):
+        super().__init__()
+        self.path = path
+        
+    def run(self):
+        self.progress.emit(2)
+        
+        # 解析 Excel 文件及相关工作表
+        xls = pd.ExcelFile(self.path)
+        browsingSheets = [s for s in xls.sheet_names if '浏览记录' in s]
+        downloadSheets = [s for s in xls.sheet_names if '下载记录' in s]
 
-    # 创建数据库连接与会话
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
-    Session = sessionmaker(bind=engine)
-    session = Session()
+        # 创建数据库连接与会话
+        engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
+        Session = sessionmaker(bind=engine)
+        session = Session()
 
-    missingInformationBrowsingRecords = []
-    missingInformationDownloadRecords = []
-    wrongBrowsingRecords = []
-    wrongDownloadRecords = []
+        missingInformationBrowsingRecords = []
+        missingInformationDownloadRecords = []
+        wrongBrowsingRecords = []
+        wrongDownloadRecords = []
 
-    # 直接加载所有案例
-    all_cases = session.query(Case).all()
-    # 构建案例字典：名称 -> Case 对象
-    cases_by_name_and_alias = {}
-    for case in all_cases:
-        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
-        for name_or_alias in name_and_alias:
-            cases_by_name_and_alias[name_or_alias] = case
+        # 直接加载所有案例
+        all_cases = session.query(Case).all()
+        
+        self.progress.emit(5)
+        
+        # 构建案例字典：名称 -> Case 对象
+        cases_by_name_and_alias = {}
+        for case in all_cases:
+            name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+            for name_or_alias in name_and_alias:
+                cases_by_name_and_alias[name_or_alias] = case
 
-    # 收集待插入的记录列表，减少频繁 commit
-    new_browsing_records = []
-    new_download_records = []
+        # 收集待插入的记录列表，减少频繁 commit
+        new_browsing_records = []
+        new_download_records = []
+        
+        browsing_sheets_count = len(browsingSheets)
+        # --------------------
+        # 处理浏览记录
+        for sheet in browsingSheets:
+            current_progress = 10 + (70-10) * browsingSheets.index(sheet) / browsing_sheets_count
+            target_progress = 10 + (70-10) * (browsingSheets.index(sheet)+1) / browsing_sheets_count
+            self.progress.emit(int(current_progress))
+            
+            df = xls.parse(sheet)
+            df_dict = df.to_dict(orient='records')
+            for data_dict in df_dict:
+                self.progress.emit(int(current_progress + (target_progress - current_progress) * df_dict.index(data_dict) / len(df_dict)))
+                
+                # 排除系统账号
+                if data_dict.get('浏览人账号') in ['admin', 'anonymous']:
+                    continue
 
-    # --------------------
-    # 处理浏览记录
-    for sheet in browsingSheets:
-        df = xls.parse(sheet)
-        for data_dict in df.to_dict(orient='records'):
-            # 排除系统账号
-            if data_dict.get('浏览人账号') in ['admin', 'anonymous']:
-                continue
+                # 检查必要字段
+                if (pd.isna(data_dict.get('案例名称')) or data_dict.get('案例名称').strip() == '' or
+                    pd.isna(data_dict.get('浏览人账号')) or data_dict.get('浏览人账号').strip() == '' or
+                    pd.isna(data_dict.get('浏览时间')) or data_dict.get('浏览时间').strip() == ''):
+                    print('案例名称、浏览人账号、浏览时间不能为空')
+                    missingInformationBrowsingRecords.append(data_dict)
+                    continue
 
-            # 检查必要字段
-            if (pd.isna(data_dict.get('案例名称')) or data_dict.get('案例名称').strip() == '' or
-                pd.isna(data_dict.get('浏览人账号')) or data_dict.get('浏览人账号').strip() == '' or
-                pd.isna(data_dict.get('浏览时间')) or data_dict.get('浏览时间').strip() == ''):
-                print('案例名称、浏览人账号、浏览时间不能为空')
-                missingInformationBrowsingRecords.append(data_dict)
-                continue
+                data_dict['案例名称'] = data_dict['案例名称'].replace(' ', '').replace('　', '')
+                # 直接从加载的案例字典中查找案例
+                case = cases_by_name_and_alias.get(data_dict['案例名称'])
+                if not case:
+                    print('案例不存在', data_dict['案例名称'])
+                    wrongBrowsingRecords.append(data_dict)
+                    continue
 
-            data_dict['案例名称'] = data_dict['案例名称'].replace(' ', '').replace('　', '')
-            # 直接从加载的案例字典中查找案例
-            case = cases_by_name_and_alias.get(data_dict['案例名称'])
-            if not case:
-                print('案例不存在', data_dict['案例名称'])
-                wrongBrowsingRecords.append(data_dict)
-                continue
+                # 解析浏览时间（仅解析一次）
+                try:
+                    browsing_dt = datetime.datetime.strptime(data_dict['浏览时间'], "%Y-%m-%d %H:%M:%S")
+                except Exception as e:
+                    print(f"日期解析错误: {data_dict['浏览时间']}")
+                    missingInformationBrowsingRecords.append(data_dict)
+                    continue
 
-            # 解析浏览时间（仅解析一次）
-            try:
-                browsing_dt = datetime.datetime.strptime(data_dict['浏览时间'], "%Y-%m-%d %H:%M:%S")
-            except Exception as e:
-                print(f"日期解析错误: {data_dict['浏览时间']}")
-                missingInformationBrowsingRecords.append(data_dict)
-                continue
+                # 检查是否已存在相同记录
+                existing = session.query(BrowsingRecord).filter_by(
+                    case_name=case.name,
+                    browser=data_dict['浏览人账号'],
+                    datetime=browsing_dt
+                ).first()
+                if existing:
+                    continue
 
-            # 检查是否已存在相同记录
-            existing = session.query(BrowsingRecord).filter_by(
-                case_name=case.name,
-                browser=data_dict['浏览人账号'],
-                datetime=browsing_dt
-            ).first()
-            if existing:
-                continue
+                record = BrowsingRecord(
+                    case_name=case.name,
+                    browser=data_dict['浏览人账号'], 
+                    datetime=browsing_dt, 
+                    is_valid=None
+                )
+                new_browsing_records.append(record)
 
-            record = BrowsingRecord(
-                case_name=case.name,
-                browser=data_dict['浏览人账号'], 
-                datetime=browsing_dt, 
-                is_valid=None
-            )
-            new_browsing_records.append(record)
+        # 批量插入浏览记录，减少数据库交互
+        if new_browsing_records:
+            session.bulk_save_objects(new_browsing_records)
+            session.commit()
+            
+        self.progress.emit(70)
 
-    # 批量插入浏览记录，减少数据库交互
-    if new_browsing_records:
-        session.bulk_save_objects(new_browsing_records)
-        session.commit()
+        download_sheets_count = len(downloadSheets)
+        # --------------------
+        # 处理下载记录
+        for sheet in downloadSheets:
+            current_progress = 70 + (98-70) * downloadSheets.index(sheet) / download_sheets_count
+            target_progress = 70 + (98-70) * (downloadSheets.index(sheet)+1) / download_sheets_count
+            self.progress.emit(int(current_progress))
+            
+            df = xls.parse(sheet)
+            df_dict = df.to_dict(orient='records')
+            for data_dict in df_dict:
+                self.progress.emit(int(current_progress + (target_progress - current_progress) * df_dict.index(data_dict) / len(df_dict)))
+                
+                if data_dict.get('下载人账号') in ['admin', 'anonymous']:
+                    continue
 
-    # --------------------
-    # 处理下载记录
-    for sheet in downloadSheets:
-        df = xls.parse(sheet)
-        for data_dict in df.to_dict(orient='records'):
-            if data_dict.get('下载人账号') in ['admin', 'anonymous']:
-                continue
+                if (pd.isna(data_dict.get('案例名称')) or data_dict.get('案例名称').strip() == '' or
+                    pd.isna(data_dict.get('下载人账号')) or data_dict.get('下载人账号').strip() == '' or
+                    pd.isna(data_dict.get('下载时间')) or data_dict.get('下载时间').strip() == ''):
+                    print('案例名称、下载人账号、下载时间不能为空')
+                    missingInformationDownloadRecords.append(data_dict)
+                    continue
 
-            if (pd.isna(data_dict.get('案例名称')) or data_dict.get('案例名称').strip() == '' or
-                pd.isna(data_dict.get('下载人账号')) or data_dict.get('下载人账号').strip() == '' or
-                pd.isna(data_dict.get('下载时间')) or data_dict.get('下载时间').strip() == ''):
-                print('案例名称、下载人账号、下载时间不能为空')
-                missingInformationDownloadRecords.append(data_dict)
-                continue
+                data_dict['案例名称'] = data_dict['案例名称'].replace(' ', '').replace('　', '')
+                case = cases_by_name_and_alias.get(data_dict['案例名称'])
+                if not case:
+                    print('案例不存在', data_dict['案例名称'])
+                    wrongDownloadRecords.append(data_dict)
+                    continue
 
-            data_dict['案例名称'] = data_dict['案例名称'].replace(' ', '').replace('　', '')
-            case = cases_by_name_and_alias.get(data_dict['案例名称'])
-            if not case:
-                print('案例不存在', data_dict['案例名称'])
-                wrongDownloadRecords.append(data_dict)
-                continue
+                try:
+                    download_dt = datetime.datetime.strptime(data_dict['下载时间'], "%Y-%m-%d %H:%M:%S")
+                except Exception as e:
+                    print(f"日期解析错误: {data_dict['下载时间']}")
+                    missingInformationDownloadRecords.append(data_dict)
+                    continue
 
-            try:
-                download_dt = datetime.datetime.strptime(data_dict['下载时间'], "%Y-%m-%d %H:%M:%S")
-            except Exception as e:
-                print(f"日期解析错误: {data_dict['下载时间']}")
-                missingInformationDownloadRecords.append(data_dict)
-                continue
+                existing = session.query(DownloadRecord).filter_by(
+                    case_name=case.name,
+                    downloader=data_dict['下载人账号'],
+                    datetime=download_dt
+                ).first()
+                if existing:
+                    continue
 
-            existing = session.query(DownloadRecord).filter_by(
-                case_name=case.name,
-                downloader=data_dict['下载人账号'],
-                datetime=download_dt
-            ).first()
-            if existing:
-                continue
+                record = DownloadRecord(
+                    case_name=case.name,
+                    downloader=data_dict['下载人账号'], 
+                    datetime=download_dt, 
+                    is_valid=None
+                )
+                new_download_records.append(record)
 
-            record = DownloadRecord(
-                case_name=case.name,
-                downloader=data_dict['下载人账号'], 
-                datetime=download_dt, 
-                is_valid=None
-            )
-            new_download_records.append(record)
+        if new_download_records:
+            session.bulk_save_objects(new_download_records)
+            session.commit()
 
-    if new_download_records:
-        session.bulk_save_objects(new_download_records)
-        session.commit()
+        session.close()
 
-    session.close()
+        # return (missingInformationBrowsingRecords, missingInformationDownloadRecords,
+        #         wrongBrowsingRecords, wrongDownloadRecords)
+        self.progress.emit(100)
+        self.result.emit((missingInformationBrowsingRecords, missingInformationDownloadRecords,
+            wrongBrowsingRecords, wrongDownloadRecords))
 
-    return (missingInformationBrowsingRecords, missingInformationDownloadRecords,
-            wrongBrowsingRecords, wrongDownloadRecords)
+# def readBrowsingAndDownloadRecord_Tsinghua(path):
 
 def addBrowsingRecord_Tsinghua(case_name, browser, datetime):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
@@ -1158,250 +1197,330 @@ def exportHuaTuData(path, year=None):
     session.close()
 
 # TODO 打包之前删去 print
-def calculatePayment(year, total_payment, process_views):
-    # 判断清华记录有效性（浏览和下载分别处理）
-    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
-    Session = sessionmaker(bind=engine)
-    session = Session()
-
-    all_cases = session.query(Case).all()
-    for case in all_cases:
-        # 浏览记录有效性判断
-        browsing_records = case.browsing_records
-        if browsing_records:
-            browser_group = {}
-            for record in browsing_records:
-                browser_group.setdefault(record.browser, []).append(record)
-            for _, records in browser_group.items():
-                records.sort(key=lambda r: r.datetime)
-                none_valid = [rec for rec in records if rec.is_valid is None]
-                for rec in reversed(records):
-                    if rec.is_valid:
-                        last_valid_datetime = rec.datetime
-                        break
-
-                for rec in none_valid:
-                    if (rec.datetime - last_valid_datetime).days >= 60:
-                        rec.is_valid = True
-                        last_valid_datetime = rec.datetime
-                    else:
-                        rec.is_valid = False
-            session.commit()
-
-        # 下载记录有效性判断
-        download_records = case.download_records
-        if download_records:
-            downloader_group = {}
-            for record in download_records:
-                downloader_group.setdefault(record.downloader, []).append(record)
-            for _, records in downloader_group.items():
-                records.sort(key=lambda r: r.datetime)
-                none_valid = [rec for rec in records if rec.is_valid is None]
-                for rec in reversed(records):
-                    if rec.is_valid:
-                        last_valid_datetime = rec.datetime
-                        break
-
-                for rec in none_valid:
-                    if (rec.datetime - last_valid_datetime).days >= 60:
-                        rec.is_valid = True
-                        last_valid_datetime = rec.datetime
-                    else:
-                        rec.is_valid = False
-            session.commit()
-
-    all_payments = session.query(Payment).all()
-    payment_by_case = {}
-    for payment in all_payments:
-        payment_by_case.setdefault(payment.case_name, []).append(payment)
-
-    for case in all_cases:
-        # 计算每个案例的浏览和下载次数
-        views = sum(1 for record in case.browsing_records 
-                        if record.is_valid and record.datetime.year == int(year))
-        downloads = sum(1 for record in case.download_records 
-                        if record.is_valid and record.datetime.year == int(year))
-        
-        # 直接查找对应年份的 HuaTu 数据记录
-        huatu_data = next((hd for hd in case.huatu_data if hd.year == int(year)), None)
-        if huatu_data:
-            views = views + huatu_data.views
-            downloads = downloads + huatu_data.downloads
-
-        payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(year)), None)
-        if not payment:
-            payment = Payment(case_name=case.name, year=int(year), views=views, downloads=downloads)
-            payment_by_case.setdefault(case.name, []).append(payment)
-            session.add(payment)
-        else:
-            payment.views = views
-            payment.downloads = downloads
-
-    cases_by_year = {}
-    for case in all_cases:
-        cases_by_year.setdefault(case.release_time.year, []).append(case)
-
-    year_payments = session.query(PaymentCalculatedYear).all()
-    for year_payment in year_payments:
-        year_payment.new_case_number = len(cases_by_year.get(year_payment.year)) if cases_by_year.get(year_payment.year, None) else 0
-
-    year_payment_by_year = {year_payment.year: year_payment for year_payment in year_payments}
-
-    total_views = sum(payment.views for payment in all_payments if payment.year == int(year))
-    total_downloads = sum(payment.downloads for payment in all_payments if payment.year == int(year))
+class calculatePaymentThread(QThread):
+    finished = pyqtSignal()
+    progress = pyqtSignal(int)
     
-    weight_payment = (0.35 * year_payment_by_year.get(int(year)) + 0.3 * year_payment_by_year.get(int(year) - 1) + 0.2 * year_payment_by_year.get(int(year) - 2) + 0.1 * year_payment_by_year.get(int(year) - 3) + 0.05 * year_payment_by_year.get(int(year) - 4))
-    def calculatePaymentA(case):
-        if int(year) - case.release_time.year == 0:
-            return total_payment * 0.7 * 0.35 / weight_payment
-        elif int(year) - case.release_time.year == 1:
-            return total_payment * 0.7 * 0.3 / weight_payment
-        elif int(year) - case.release_time.year == 2:
-            return total_payment * 0.7 * 0.2 / weight_payment
-        elif int(year) - case.release_time.year == 3:
-            return total_payment * 0.7 * 0.1 / weight_payment
-        elif int(year) - case.release_time.year == 4:
-            return total_payment * 0.7 * 0.05 / weight_payment
-        else:
-            return 0
+    def __init__(self, years, total_payment, decimal_value, square_selected):
+        super().__init__()
+        self.years = years
+        self.total_payment = total_payment
+        self.decimal_value = decimal_value
+        self.square_selected = square_selected
+        
+    def run(self):
+        # 判断清华记录有效性（浏览和下载分别处理）
+        engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
+        Session = sessionmaker(bind=engine)
+        session = Session()
 
-    # process_views 为 1 时，按照浏览量 * 0.3 + 下载量 计算
-    # process_views 为 2 时，按照浏览量开平方 + 下载量计算
-    def calculatePaymentB(payment):
-        if process_views == 1:
-            return total_payment * 0.3 * (payment.views * 0.3 + payment.downloads) / (total_views * 0.3 + total_downloads)
-        elif process_views == 2:
-            return total_payment * 0.3 * (payment.views ** 0.5 + payment.downloads) / (total_views ** 0.5 + total_downloads)
-
-    for case in all_cases:
-        payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(year)), None) # 由于浏览量与下载量处的统计，这里一定能查到 payment
-
-        if case.owner_name == '清华大学经济管理学院':
-            A = calculatePaymentA(case)
-            B = calculatePaymentB(payment)
+        all_cases = session.query(Case).all()
+        
+        self.progress.emit(int(2))
+        
+        for case in all_cases:
+            current_progress = 2 + (50-2) * all_cases.index(case) / len(all_cases)
+            self.progress.emit(int(current_progress))
             
-            if '独立开发' in case.submission_source:
-                prepaid_payment = 8000
-            elif '合作开发' in case.submission_source:
-                prepaid_payment = 4000
-            elif '学院外' in case.submission_source:
-                prepaid_payment = 5000
+            # 浏览记录有效性判断
+            browsing_records = case.browsing_records
+            if browsing_records:
+                browser_group = {}
+                for record in browsing_records:
+                    browser_group.setdefault(record.browser, []).append(record)
+                for _, records in browser_group.items():
+                    records.sort(key=lambda r: r.datetime)
+                    last_valid_datetime = records[0].datetime
+                    records[0].is_valid = True
+                    none_valid = [rec for rec in records if rec.is_valid is None]
+                    for rec in reversed(records):
+                        if rec.is_valid:
+                            last_valid_datetime = rec.datetime
+                            break
 
-            if not case.contain_TN or case.is_adapted_from_text:
-                prepaid_payment = prepaid_payment * 0.5
+                    for rec in none_valid:
+                        if (rec.datetime - last_valid_datetime).days >= 60:
+                            rec.is_valid = True
+                            last_valid_datetime = rec.datetime
+                        else:
+                            rec.is_valid = False
+                session.commit()
 
-            payment.prepaid_payment = prepaid_payment
-            payment.renew_payment = 0 if case.is_adapted_from_text else A + B
-            if case.release_time.year < 2015:
-                payment.real_prepaid_payment = 0
-                payment.real_renew_payment = payment.renew_payment
-                last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(year) - 1), None)
-                if not last_year_payment:
-                    print('案例缺少从前年份计算结果')
-                    return case
-                payment.accumulated_payment = payment.renew_payment + last_year_payment.accumulated_payment
-            elif int(year) == case.release_time.year:
-                payment.real_prepaid_payment = payment.prepaid_payment
-                payment.real_renew_payment = max(payment.renew_payment - payment.prepaid_payment, 0)
-                payment.accumulated_payment = payment.renew_payment
-            else:
-                payment.real_prepaid_payment = 0
-                last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(year) - 1), None)
-                if not last_year_payment:
-                    print('案例缺少从前年份计算结果')
-                    return case
-                last_year_accumulated_payment = last_year_payment.accumulated_payment
-                payment.accumulated_payment = payment.renew_payment + last_year_accumulated_payment
-                if last_year_accumulated_payment > payment.prepaid_payment:
-                    payment.real_renew_payment = payment.renew_payment
-                else:
-                    payment.real_renew_payment = max(payment.accumulated_payment - payment.prepaid_payment, 0)
+            # 下载记录有效性判断
+            download_records = case.download_records
+            if download_records:
+                downloader_group = {}
+                for record in download_records:
+                    downloader_group.setdefault(record.downloader, []).append(record)
+                for _, records in downloader_group.items():
+                    records.sort(key=lambda r: r.datetime)
+                    last_valid_datetime = records[0].datetime
+                    records[0].is_valid = True
+                    none_valid = [rec for rec in records if rec.is_valid is None]
+                    for rec in reversed(records):
+                        if rec.is_valid:
+                            last_valid_datetime = rec.datetime
+                            break
 
-        elif case.owner_name == '中国人民大学商学院':
-            A = calculatePaymentA(case)
-            B = calculatePaymentB(payment)
+                    for rec in none_valid:
+                        if (rec.datetime - last_valid_datetime).days >= 60:
+                            rec.is_valid = True
+                            last_valid_datetime = rec.datetime
+                        else:
+                            rec.is_valid = False
+                session.commit()
+                
+        self.progress.emit(int(50))
 
-            if not case.is_exclusive:
-                A = A * 0.8
-
-            calculated_payment = A + B
-
-            if case.is_micro:
-                calculated_payment = calculated_payment * 0.5
+        all_payments = session.query(Payment).all()
+        payment_by_case = {}
+        for payment in all_payments:
+            payment_by_case.setdefault(payment.case_name, []).append(payment)
             
-            payment.prepaid_payment = 2000 if case.is_micro else 4000
-            payment.renew_payment = calculated_payment
-            if case.release_time.year < 2015:
-                payment.real_prepaid_payment = 0
-                payment.real_renew_payment = payment.renew_payment
-                last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(year) - 1), None)
-                if not last_year_payment:
-                    print('案例缺少从前年份计算结果')
-                    return case
-                payment.accumulated_payment = payment.renew_payment + last_year_payment.accumulated_payment
-            elif int(year) == case.release_time.year:
-                payment.real_prepaid_payment = payment.prepaid_payment
-                payment.real_renew_payment = max(payment.renew_payment - payment.prepaid_payment, 0)
-                payment.accumulated_payment = payment.renew_payment
-            else:
-                payment.real_prepaid_payment = 0
-                last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(year) - 1), None)
-                if not last_year_payment:
-                    print('案例缺少从前年份计算结果')
-                    return case
-                last_year_accumulated_payment = last_year_payment.accumulated_payment
-                payment.accumulated_payment = payment.renew_payment + last_year_accumulated_payment
-                if last_year_accumulated_payment > payment.prepaid_payment:
-                    payment.real_renew_payment = payment.renew_payment
-                else:
-                    payment.real_renew_payment = max(payment.accumulated_payment - payment.prepaid_payment, 0)
+        self.progress.emit(int(55))    
+        
+        cases_by_year = {}
+        for case in all_cases:
+            cases_by_year.setdefault(case.release_time.year, []).append(case)
 
-        elif case.owner_name == '浙江大学管理学院':
-            publish_years = int(year) - case.release_time.year + 1
-
-            if case.batch == 1:
-                payment.prepaid_payment = 4400
-                if publish_years > 0 and publish_years <= 1:
-                    prepaid_payment = 1000
-                elif publish_years == 2:
-                    prepaid_payment = 800
-                elif publish_years == 3:
-                    prepaid_payment = 600
-                elif publish_years >= 4 and publish_years <= 8:
-                    prepaid_payment = 400
-                else:
-                    prepaid_payment = 0
-            elif case.batch == 2:
-                payment.prepaid_payment = 6400
-                if publish_years > 0 and publish_years <= 3:
-                    prepaid_payment = 1000
-                elif publish_years == 4:
-                    prepaid_payment = 800
-                elif publish_years == 5:
-                    prepaid_payment = 600
-                elif publish_years >= 6 and publish_years <= 10:
-                    prepaid_payment = 400
-                else:
-                    prepaid_payment = 0
-
-            if int(year) == case.release_time.year:
-                payment.accumulated_payment = prepaid_payment
-            else:
-                last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(year) - 1), None)
-                if not last_year_payment:
-                    print('案例缺少从前年份计算结果')
-                    return case
-                payment.accumulated_payment = prepaid_payment + last_year_payment.accumulated_payment
+        year_payments = session.query(PaymentCalculatedYear).all()
+        for year_payment in year_payments:
+            year_payment.new_case_number = len(cases_by_year.get(year_payment.year)) if cases_by_year.get(year_payment.year, None) else 0
+            if year_payment.new_case_number == 0:
+                year_payment.is_calculated = True
             
-            payment.renew_payment = 0
-            payment.real_prepaid_payment = prepaid_payment
-            payment.real_renew_payment = 0
+        year_payment_by_year = {year_payment.year: year_payment for year_payment in year_payments}
+           
+        for i, year in enumerate(self.years):
+            self.year = year
+            
+            if year_payment_by_year.get(int(self.year), None) and year_payment_by_year.get(int(self.year)).is_calculated:
+                continue
 
-        year_payment = year_payment_by_year.get(int(year))
-        year_payment.is_calculated = True
+            for case in all_cases:
+                # 计算每个案例的浏览和下载次数
+                views = sum(1 for record in case.browsing_records 
+                                if record.is_valid and record.datetime.year == int(self.year))
+                downloads = sum(1 for record in case.download_records 
+                                if record.is_valid and record.datetime.year == int(self.year))
+                
+                # 直接查找对应年份的 HuaTu 数据记录
+                huatu_data = next((hd for hd in case.huatu_data if hd.year == int(self.year)), None)
+                if huatu_data:
+                    views = views + huatu_data.views
+                    downloads = downloads + huatu_data.downloads
 
-    session.commit()
-    session.close()
+                payment = next((pay for pay in payment_by_case.get(case.name, []) if pay.year == int(self.year)), None)
+                if not payment:
+                    payment = Payment(case_name=case.name, year=int(self.year), views=views, downloads=downloads)
+                    payment_by_case.setdefault(case.name, []).append(payment)
+                    session.add(payment)
+                else:
+                    payment.views = views
+                    payment.downloads = downloads
+                    
+            # self.progress.emit(int(60*/len(self.years)))
+            self.progress.emit(int(60 + (100-60) * i / len(self.years)))
+
+            total_views = sum(payment.views for payment in all_payments if payment.year == int(self.year))
+            total_downloads = sum(payment.downloads for payment in all_payments if payment.year == int(self.year))
+            
+            weight_payment = (0.35 * getattr(year_payment_by_year.get(int(self.year), object()), 'new_case_number', 0) 
+                            + 0.3 * getattr(year_payment_by_year.get(int(self.year) - 1, object()), 'new_case_number', 0) 
+                            + 0.2 * getattr(year_payment_by_year.get(int(self.year) - 2, object()), 'new_case_number', 0)
+                            + 0.1 * getattr(year_payment_by_year.get(int(self.year) - 3, object()), 'new_case_number', 0)
+                            + 0.05 * getattr(year_payment_by_year.get(int(self.year) - 4, object()), 'new_case_number', 0))
+
+            def calculatePaymentA(case):
+                if int(self.year) - case.release_time.year == 0:
+                    return self.total_payment * 0.7 * 0.35 / weight_payment
+                elif int(self.year) - case.release_time.year == 1:
+                    return self.total_payment * 0.7 * 0.3 / weight_payment
+                elif int(self.year) - case.release_time.year == 2:
+                    return self.total_payment * 0.7 * 0.2 / weight_payment
+                elif int(self.year) - case.release_time.year == 3:
+                    return self.total_payment * 0.7 * 0.1 / weight_payment
+                elif int(self.year) - case.release_time.year == 4:
+                    return self.total_payment * 0.7 * 0.05 / weight_payment
+                else:
+                    return 0
+
+            # process_views 为 1 时，按照浏览量 * 0.3 + 下载量 计算
+            # process_views 为 2 时，按照浏览量开平方 + 下载量计算
+            def calculatePaymentB(payment):
+                if total_views + total_downloads == 0:
+                    return 0
+                
+                if self.square_selected:
+                    return self.total_payment * 0.3 * ((payment.views * self.decimal_value) ** 0.5 + payment.downloads) / ((total_views * self.decimal_value) ** 0.5 + total_downloads) 
+                else:
+                    return self.total_payment * 0.3 * (payment.views * self.decimal_value + payment.downloads) / (total_views * self.decimal_value + total_downloads)
+
+            # self.progress.emit(int(65/len(self.years)))
+            self.progress.emit(int(65 + (100-65) * i / len(self.years)))
+            
+            print(len(all_cases))
+
+            for case in all_cases:
+                
+                current_progress = 65 + (100-65) * i / len(self.years) + ((100-65) / len(all_cases)) * (all_cases.index(case) / len(all_cases))
+                self.progress.emit(int(current_progress))
+                
+                payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(self.year)), None) # 由于浏览量与下载量处的统计，这里一定能查到 payment
+                if case.owner_name == '清华大学经济管理学院':
+                    A = calculatePaymentA(case)
+                    B = calculatePaymentB(payment)
+                    
+                    if '独立开发' in case.submission_source:
+                        prepaid_payment = 8000
+                    elif '合作开发' in case.submission_source:
+                        prepaid_payment = 4000
+                    elif '学院外' in case.submission_source:
+                        prepaid_payment = 5000
+
+                    if not case.contain_TN or case.is_adapted_from_text:
+                        prepaid_payment = prepaid_payment * 0.5
+
+                    payment.prepaid_payment = prepaid_payment
+                    payment.renew_payment = 0 if case.is_adapted_from_text else A + B
+                    if case.release_time.year < 2015:
+                        payment.real_prepaid_payment = 0
+                        payment.real_renew_payment = payment.renew_payment
+                        if self.year == 2000:
+                            payment.accumulated_payment = payment.renew_payment 
+                        else:
+                            last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(self.year) - 1), None)
+                            if not last_year_payment:
+                                print('案例缺少从前年份计算结果')
+                                # return case
+                                return
+                            payment.accumulated_payment = payment.renew_payment + last_year_payment.accumulated_payment
+                    elif int(self.year) == case.release_time.year:
+                        payment.real_prepaid_payment = payment.prepaid_payment
+                        payment.real_renew_payment = max(payment.renew_payment - payment.prepaid_payment, 0)
+                        payment.accumulated_payment = payment.renew_payment
+                    else:
+                        payment.real_prepaid_payment = 0
+                        if self.year == 2000:
+                            last_year_accumulated_payment = 0
+                        else:
+                            last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(self.year) - 1), None)
+                            if not last_year_payment:
+                                print('案例缺少从前年份计算结果')
+                                # return case
+                                return
+                            last_year_accumulated_payment = last_year_payment.accumulated_payment
+                        payment.accumulated_payment = payment.renew_payment + last_year_accumulated_payment
+                        if last_year_accumulated_payment > payment.prepaid_payment:
+                            payment.real_renew_payment = payment.renew_payment
+                        else:
+                            payment.real_renew_payment = max(payment.accumulated_payment - payment.prepaid_payment, 0)
+
+                elif case.owner_name == '中国人民大学商学院':
+                    A = calculatePaymentA(case)
+                    B = calculatePaymentB(payment)
+
+                    if not case.is_exclusive:
+                        A = A * 0.8
+
+                    calculated_payment = A + B
+
+                    if case.is_micro:
+                        calculated_payment = calculated_payment * 0.5
+                    
+                    payment.prepaid_payment = 2000 if case.is_micro else 4000
+                    payment.renew_payment = calculated_payment
+                    if case.release_time.year < 2015:
+                        payment.real_prepaid_payment = 0
+                        payment.real_renew_payment = payment.renew_payment
+                        if self.year == 2000:
+                            payment.accumulated_payment = payment.renew_payment
+                        else:
+                            last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(self.year) - 1), None)
+                            if not last_year_payment:
+                                print('案例缺少从前年份计算结果')
+                                # return case
+                                return
+                            payment.accumulated_payment = payment.renew_payment + last_year_payment.accumulated_payment
+                    elif int(self.year) == case.release_time.year:
+                        payment.real_prepaid_payment = payment.prepaid_payment
+                        payment.real_renew_payment = max(payment.renew_payment - payment.prepaid_payment, 0)
+                        payment.accumulated_payment = payment.renew_payment
+                    else:
+                        payment.real_prepaid_payment = 0
+                        if self.year == 2000:
+                            last_year_accumulated_payment = 0
+                        else:
+                            last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(self.year) - 1), None)
+                            if not last_year_payment:
+                                print('案例缺少从前年份计算结果')
+                                # return case
+                                return
+                            last_year_accumulated_payment = last_year_payment.accumulated_payment
+                        payment.accumulated_payment = payment.renew_payment + last_year_accumulated_payment
+                        if last_year_accumulated_payment > payment.prepaid_payment:
+                            payment.real_renew_payment = payment.renew_payment
+                        else:
+                            payment.real_renew_payment = max(payment.accumulated_payment - payment.prepaid_payment, 0)
+
+                elif case.owner_name == '浙江大学管理学院':
+                    publish_years = int(self.year) - case.release_time.year + 1
+
+                    if case.batch == 1:
+                        payment.prepaid_payment = 4400
+                        if publish_years > 0 and publish_years <= 1:
+                            prepaid_payment = 1000
+                        elif publish_years == 2:
+                            prepaid_payment = 800
+                        elif publish_years == 3:
+                            prepaid_payment = 600
+                        elif publish_years >= 4 and publish_years <= 8:
+                            prepaid_payment = 400
+                        else:
+                            prepaid_payment = 0
+                    elif case.batch == 2:
+                        payment.prepaid_payment = 6400
+                        if publish_years > 0 and publish_years <= 3:
+                            prepaid_payment = 1000
+                        elif publish_years == 4:
+                            prepaid_payment = 800
+                        elif publish_years == 5:
+                            prepaid_payment = 600
+                        elif publish_years >= 6 and publish_years <= 10:
+                            prepaid_payment = 400
+                        else:
+                            prepaid_payment = 0
+
+                    if int(self.year) == case.release_time.year:
+                        payment.accumulated_payment = prepaid_payment
+                    else:
+                        if self.year == 2000:
+                            payment.accumulated_payment = prepaid_payment
+                        else:
+                            last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(self.year) - 1), None)
+                            if not last_year_payment:
+                                print('案例缺少从前年份计算结果')
+                                # return case
+                                return
+                            payment.accumulated_payment = prepaid_payment + last_year_payment.accumulated_payment
+                    
+                    payment.renew_payment = 0
+                    payment.real_prepaid_payment = prepaid_payment
+                    payment.real_renew_payment = 0
+
+            year_payment = year_payment_by_year.get(int(self.year))
+            print(year_payment.year, year_payment.new_case_number)
+            year_payment.is_calculated = True
+
+        # for year_payment in year_payments:
+        #     print(year_payment.year, year_payment.new_case_number, year_payment.is_calculated)
+
+        session.commit()
+        session.close()
+            
+        self.progress.emit(100)
+        self.finished.emit()
+# def calculatePayment(year, total_payment, process_views):
 
 def getCalculatedPaymentByYear(year):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
@@ -1441,12 +1560,12 @@ def getCalculatedPaymentByCase(case_name):
     case = session.query(Case).filter_by(name=case_name).first()
     if not case:
         print('案例不存在')
-        return None
+        return None, None
     
     payments = case.payments
     if not payments:
         print('数据不存在')
-        return None
+        return None, None
 
     tax_deducted_result = {}
     non_tax_deducted_result = {}
@@ -1487,11 +1606,34 @@ def exportCalculatedPayment(path):
             '本年度实际应付预付版税（税后）': payment.real_prepaid_payment * 0.94,
             '本年度实际应付续付版税（税后）': payment.real_renew_payment * 0.94,
         })
-
+        
+    if not payment_by_year:
+        print("没有数据需要导出")
+        session.close()
+        return
+    
     with pd.ExcelWriter(path) as writer:
-        for year in payment_by_year:
-            df = pd.DataFrame(payment_by_year[year])
-            df.to_excel(writer, sheet_name=str(year), index=False)
+            at_least_one_sheet = False  # 用于跟踪是否有有效的工作表
+
+            for year, payments in payment_by_year.items():
+                df = pd.DataFrame(payments)
+                # 检查 DataFrame 是否为空
+                if not df.empty:
+                    at_least_one_sheet = True
+                    df.to_excel(writer, sheet_name=str(year), index=False)
+                else:
+                    # 如果某一年的数据为空，可以选择创建一个空工作表
+                    df_empty = pd.DataFrame(columns=['案例标题', '出版年份', '总预付版税', '本年度续付版税', '总续付版税', 
+                                                    '本年度实际应付预付版税', '本年度实际应付续付版税', 
+                                                    '本年度实际应付预付版税（税后）', '本年度实际应付续付版税（税后）'])
+                    df_empty.to_excel(writer, sheet_name=str(year), index=False)
+            
+            # 如果没有有效的工作表，则创建一个默认的工作表
+            if not at_least_one_sheet:
+                df_empty = pd.DataFrame(columns=['案例标题', '出版年份', '总预付版税', '本年度续付版税', '总续付版税', 
+                                                '本年度实际应付预付版税', '本年度实际应付续付版税', 
+                                                '本年度实际应付预付版税（税后）', '本年度实际应付续付版税（税后）'])
+                df_empty.to_excel(writer, sheet_name="默认工作表", index=False)
 
     session.close()
 

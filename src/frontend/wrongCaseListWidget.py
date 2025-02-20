@@ -1,12 +1,10 @@
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, 
-    QLabel, QComboBox, QProgressBar, QSizePolicy, QSpacerItem, QFileDialog, QMessageBox
+    QWidget, QVBoxLayout, QLabel, QSizePolicy, QSpacerItem
 )
 from PyQt5.QtGui import QFont, QIcon
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt
 
 from src.frontend.caselist import get_case_list_widget
-from src.frontend.searchbar import SearchBar
 from src.frontend.utils import *
 from src.backend.read_case import *
 

@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (
     QFrame, QFileDialog, QMessageBox
 )
 from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QEvent
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
 import numpy as np
@@ -27,7 +27,10 @@ class MatplotlibCanvas(FigureCanvas):
         
         self.fig, self.ax = plt.subplots()
         super().__init__(self.fig)
-        self.plot_example()
+        # self.plot_example()
+        # 初始不显示图表和坐标轴等
+        self.ax.axis('off')
+        
 
     def plot_example(self):
         years = np.array([2017, 2018, 2019, 2020, 2021])
@@ -46,6 +49,52 @@ class MatplotlibCanvas(FigureCanvas):
 
         self.fig.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.15)
         self.draw()
+        
+    def update_data(self, case):
+        if case.tax_deducted_result is None or case.non_tax_deducted_result is None:
+            # 绘制文字：未计算
+            self.ax.clear()
+            self.ax.text(0.5, 0.5, "未计算稿酬", ha='center', va='center', fontsize=40)
+            self.ax.axis('off')
+            self.draw()
+            return
+        
+        # 清空图表
+        self.ax.clear()
+        self.ax.set_title(f"{case.name}稿酬历史发放记录")
+        self.ax.set_xlabel("年份", fontsize=18)
+        self.ax.set_ylabel("金额", fontsize=18)
+        
+        # case.tax_deducted_result是个字典，找到其中最大的年份，然后往前取五年
+        for key in case.tax_deducted_result.keys():
+            print(key, type(key))
+        max_year = max(case.tax_deducted_result.keys())
+        years = np.array(range(max_year-4, max_year+1))
+        tax_deducted_values = np.array([
+            case.tax_deducted_result.get(year, 0)['real_prepaid_payment'] + case.tax_deducted_result.get(year, 0)['real_renew_payment']
+            for year in years
+        ])
+        non_tax_deducted_values = np.array([
+            case.non_tax_deducted_result.get(year, 0)['real_prepaid_payment'] + case.non_tax_deducted_result.get(year, 0)['real_renew_payment']
+            for year in years
+        ])
+        
+        self.ax.set_xticks(years)
+        # 绘制两条折线
+        self.ax.plot(years, tax_deducted_values, marker='', linewidth=2, linestyle='-', color='#9b69ff', alpha=0.6, label="税前")
+        self.ax.plot(years, non_tax_deducted_values, marker='', linewidth=2, linestyle='-', color='#ff6b6b', alpha=0.6, label="税后")
+        self.ax.legend()
+        
+        # 在每个点的上方显示 y 轴的具体值
+        for i, value in enumerate(tax_deducted_values):
+            self.ax.annotate(f'{value}', xy=(years[i], tax_deducted_values[i]), xytext=(0, 5),
+                             textcoords='offset points', ha='center', fontsize=12)
+        for i, value in enumerate(non_tax_deducted_values):
+            self.ax.annotate(f'{value}', xy=(years[i], non_tax_deducted_values[i]), xytext=(0, 5),
+                             textcoords='offset points', ha='center', fontsize=12)
+        
+        self.fig.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.15)
+        self.draw()
 
 class MainWindow(QWidget):
     def __init__(self):
@@ -53,6 +102,16 @@ class MainWindow(QWidget):
         self.initUI()
         
         self.wrong_case_list_widget = None
+        self.searched_cases = []
+        
+        # 启用事件过滤器
+        self.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        # 如果事件是按键事件并且按的是空格键
+        if event.type() == QEvent.KeyPress and event.key() == Qt.Key_Space:
+            return True  # 忽略空格键事件
+        return super().eventFilter(obj, event)  # 否则正常处理事件
 
     def initUI(self):
         self.setWindowTitle(" ")
@@ -73,7 +132,7 @@ class MainWindow(QWidget):
         
         
         buttonlist_container = QWidget()
-        buttonlist_container.setFixedHeight(500)
+        buttonlist_container.setFixedHeight(560)
         button_layout = QVBoxLayout(buttonlist_container)   # 左侧按钮
         button_layout.setContentsMargins(30, 50, 30, 50)  # 设置边距
         button_layout.setSpacing(20)
@@ -122,16 +181,27 @@ class MainWindow(QWidget):
         set_button_style(self.otherSchool_button)
         self.otherSchool_button.clicked.connect(self.import_other_school)
         
+        #TODO 导出稿酬数据
+        
         line2 = QFrame()
         line2.setFrameShape(QFrame.HLine)
         line2.setFrameShadow(QFrame.Sunken)
         line2.setStyleSheet("color: #e0e0e0;")
         
+        self.export_payment_button = QPushButton("导出稿酬数据")
+        set_button_style(self.export_payment_button)
+        self.export_payment_button.clicked.connect(self.export_payment)
+        
+        line3 = QFrame()
+        line3.setFrameShape(QFrame.HLine)
+        line3.setFrameShadow(QFrame.Sunken)
+        line3.setStyleSheet("color: #e0e0e0;")
+        
         self.migrate_button = QPushButton("导入软件数据")
         set_button_style(self.migrate_button)
         self.migrate_button.clicked.connect(self.import_migration_data)
         
-        self.export_button = QPushButton("导出数据")
+        self.export_button = QPushButton("导出软件数据")
         set_button_style(self.export_button)
         self.export_button.clicked.connect(self.export_data)
         
@@ -141,6 +211,8 @@ class MainWindow(QWidget):
         # button_layout.addWidget(self.royalty_button)
         button_layout.addWidget(self.otherSchool_button)
         button_layout.addWidget(line2)
+        button_layout.addWidget(self.export_payment_button)
+        button_layout.addWidget(line3)
         button_layout.addWidget(self.migrate_button)
         button_layout.addWidget(self.export_button)
         
@@ -259,11 +331,19 @@ class MainWindow(QWidget):
         # 重新创建数据库
         init_db()
         
-        # TODO 加载圆圈
-        
-        readCaseList(caselist_path)
-        readBrowsingAndDownloadRecord_Tsinghua(browse_and_download_path)
-        readBrowsingAndDownloadData_HuaTu(huatu_path)
+        self.overlay.show_loading_animation()
+        try:
+            readCaseList(caselist_path)
+            # readBrowsingAndDownloadRecord_Tsinghua(browse_and_download_path)
+            self.read_thread: ReadTsinghuaBrowsingAndDownloadThread = ReadTsinghuaBrowsingAndDownloadThread(browse_and_download_path)
+            self.read_thread.start()
+            self.read_thread.join()
+            readBrowsingAndDownloadData_HuaTu(huatu_path)
+        except Exception as e:
+            QMessageBox.critical(self, "导入数据失败", f"导入数据失败：{str(e)}")
+        finally:
+            self.overlay.setVisible(False)
+            self.overlay.timer.stop()
     
     def export_data(self):
         folder_path = QFileDialog.getExistingDirectory(self, "选择文件夹")
@@ -279,6 +359,13 @@ class MainWindow(QWidget):
         exportBrowsingAndDownloadRecord(browse_and_download_path)
         exportHuaTuData(huatu_path)
         
+    def export_payment(self):
+        file_path, _ = QFileDialog.getSaveFileName(self, "保存文件", "", "Excel文件 (*.xlsx)")
+        if not file_path:
+            return
+        
+        exportCalculatedPayment(file_path)
+        
     def on_case_clicked(self, index):
         """点击案例项时的回调函数"""
         case = self.case_list_model.data(index, Qt.DisplayRole)
@@ -292,11 +379,18 @@ class MainWindow(QWidget):
         case["highlighted"] = True
         self.case_list_model.layoutChanged.emit()
         
+        # 更新图表
+        self.canvas.update_data(self.searched_cases[index.row()])
+        
     def on_search_clicked(self):
         search_text = self.search_bar.get_text()
         print(f"搜索内容: {search_text}")
         
-        matched_strs, similar_cases = zip(*getSimilarCases(search_text))
+        # matched_strs, similar_cases = zip(*getSimilarCases(search_text))
+        returns = getSimilarCases(search_text)
+        if len(returns) == 0:
+            return
+        matched_strs, similar_cases = zip(*returns)
          
         if len(similar_cases) > 0:
             similar_caseslist = cases_class_to_widget_list(similar_cases)
@@ -308,7 +402,12 @@ class MainWindow(QWidget):
             self.case_list_model.layoutChanged.emit()
         else:
             self.case_list_model.update_data([])
+            
+        self.searched_cases: list[Case] = similar_cases
+        for case in self.searched_cases:
+            case.tax_deducted_result, case.non_tax_deducted_result = getCalculatedPaymentByCase(case.name)
 
+        
 def app():
     app = QApplication(sys.argv)
     window = MainWindow()

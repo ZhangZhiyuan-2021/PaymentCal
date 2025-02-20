@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (
     QLineEdit
 )
 from PyQt5.QtGui import QFont, QIcon, QIntValidator
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QEvent
 
 from src.frontend.caselist import get_case_list_widget
 from src.frontend.searchbar import SearchBar
@@ -31,7 +31,16 @@ class ImportExclusiveAndBatchWindow(QWidget):
         self.matching_case_num = 0
         
         self.wrong_case_list_widget = None
+        
+        # 启用事件过滤器
+        self.installEventFilter(self)
 
+    def eventFilter(self, obj, event):
+        # 如果事件是按键事件并且按的是空格键
+        if event.type() == QEvent.KeyPress and event.key() == Qt.Key_Space:
+            return True  # 忽略空格键事件
+        return super().eventFilter(obj, event)  # 否则正常处理事件
+    
     def initUI(self):
         self.setWindowTitle(" ")
         self.setWindowIcon(QIcon("img/tsinghua.ico"))
@@ -151,6 +160,8 @@ class ImportExclusiveAndBatchWindow(QWidget):
         super().resizeEvent(event)  # 确保父类的 resizeEvent 也被调用
     
     def on_unmatched_case_clicked(self, index):
+        self.unmatched_case_list_view.simulate_right_click(index)
+        
         # 对应的case背景颜色改变
         case = self.unmatched_case_model.data(index, Qt.DisplayRole)
         if not case:
@@ -179,7 +190,9 @@ class ImportExclusiveAndBatchWindow(QWidget):
         self.unmatched_case_model.layoutChanged.emit()
         self.search_results_model.layoutChanged.emit()
         self.current_unmatched_case = case["title"]
-        pass
+
+        self.search_input.set_text(case["title"])
+        self.on_search_clicked()
     
     def on_search_results_clicked(self, index):
         # 对应的case背景颜色改变
@@ -194,7 +207,13 @@ class ImportExclusiveAndBatchWindow(QWidget):
         case["highlighted"] = True
         self.search_results_model.layoutChanged.emit()
         
-        if self.current_unmatched_case != "":
+        # 如果self.matching_case_dict[self.current_unmatched_case]有值，且当前index选中了同一个case，则取消匹配
+        if self.current_unmatched_case in self.matching_case_dict and self.matching_case_dict[self.current_unmatched_case] == case["title"]:
+            del self.matching_case_dict[self.current_unmatched_case]
+            self.matching_case_num = len(self.matching_case_dict)
+            case["highlighted"] = False
+            self.search_results_model.layoutChanged.emit()
+        elif self.current_unmatched_case != "":
             self.matching_case_dict[self.current_unmatched_case] = case["title"] 
             self.matching_case_num = len(self.matching_case_dict)
 
@@ -286,6 +305,8 @@ class ImportExclusiveAndBatchWindow(QWidget):
         
         if len(self.matching_case_dict) == self.unmatched_case_num:
             for key, value in self.matching_case_dict.items():
+                if value == "未匹配":
+                    continue
                 updateCase(value, alias=key, batch=self.batch, owner_name=self.data_source, is_exclusive=self.is_exclusive)
                 
         self.init_list()
@@ -298,16 +319,18 @@ class ImportExclusiveAndBatchWindow(QWidget):
         
         if len(similar_cases) > 0:
             similar_caseslist = cases_class_to_widget_list(similar_cases)
+            # 在similar_caseslist头部添加“不匹配”项
+            similar_caseslist.insert(0, {"title": "未匹配", "highlighted": False, "matched_str": "", "info": "如果找不到匹配项，请选择此项"})
             self.search_results_model.update_data(similar_caseslist)
             
             # 如果当前case已经匹配，则高亮search_results_model中对应的case；如果未匹配，则不高亮
-            # 先恢复search_results_model中所有case的背景颜色
-            for row in range(self.search_results_model.rowCount()):
+            # 从1开始，因为第0个是“未匹配”项
+            for row in range(1, self.search_results_model.rowCount()):
                 _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
                 if _case:
                     _case["highlighted"] = False
                     
-                _case['matched_str'] = f"匹配项：{matched_strs[row]}"
+                _case['matched_str'] = f"匹配项：{matched_strs[row-1]}"
             # 如果当前case已经匹配，则高亮search_results_model中对应的case
             if self.current_unmatched_case in self.matching_case_dict:
                 for row in range(self.search_results_model.rowCount()):

@@ -18,7 +18,6 @@ class SearchBar(QWidget):
         self.search_input.setFont(QFont("黑体", 10))
         self.search_input.setStyleSheet("""
             QLineEdit {
-                border: none;
                 border: 2px solid rgb(200, 200, 200);
                 border-radius: 8px;
                 padding: 10px;
@@ -70,3 +69,6 @@ class SearchBar(QWidget):
     # 清空搜索框
     def clear_text(self):
         self.search_input.clear()
+        
+    def set_text(self, text):
+        self.search_input.setText(text)
