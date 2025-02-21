@@ -9,6 +9,21 @@ from sqlalchemy import create_engine
 def main():
     init_db()
     app()
+
+    # # 初始化数据库连接
+    # engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
+    # Session = sessionmaker(bind=engine)
+    # session = Session()
+
+    # # 更新 payment_calculated_year 表中的所有行，将 is_calculated 列设置为 False
+    # session.query(PaymentCalculatedYear).update({PaymentCalculatedYear.is_calculated: False})
+
+    # # 提交更改
+    # session.commit()
+
+    # # 关闭会话
+    # session.close()
+
     # readCaseList('data/test.xls')
     # # readCaseList('data/testCaseList.xlsx')
     # readBrowsingAndDownloadRecord_Tsinghua('data/testTsinghua.xls')
