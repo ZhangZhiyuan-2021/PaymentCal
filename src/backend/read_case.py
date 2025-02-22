@@ -148,15 +148,17 @@ def readCaseList(path):
 
 def readCaseExclusiveAndBatch(path, owner_name, batch):
     df = pd.read_excel(path)
+    df.dropna(axis=0, how='all', inplace=True)
     data_dict_list = df.to_dict(orient='records')
     title = None
+    print(data_dict_list[0])
     for attr in data_dict_list[0]:
         if '标题' in attr:
             title = attr
             break
     if not title:
         print('标题字段不存在')
-        return None
+        return None, None
     missingInformationCases = []
     wrong_cases = []
 
@@ -168,7 +170,7 @@ def readCaseExclusiveAndBatch(path, owner_name, batch):
     owner = session.query(CopyrightOwner).filter_by(name=owner_name).first()
     if not owner:
         print('版权方不存在')
-        return None
+        return None, None
     
     all_cases = session.query(Case).all()
     cases_by_name_and_alias = {}
@@ -1358,8 +1360,6 @@ class calculatePaymentThread(QThread):
 
             # self.progress.emit(int(65/len(self.years)))
             self.progress.emit(int(65 + (100-65) * i / len(self.years)))
-            
-            print(len(all_cases))
 
             for case in all_cases:
                 

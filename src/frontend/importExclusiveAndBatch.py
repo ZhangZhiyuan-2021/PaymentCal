@@ -180,11 +180,10 @@ class ImportExclusiveAndBatchWindow(QWidget):
                 _case["highlighted"] = False
         # 如果当前case已经匹配，则高亮search_results_model中对应的case
         if case["title"] in self.matching_case_dict:
-            print(case["title"], self.matching_case_dict)
             for row in range(self.search_results_model.rowCount()):
                 _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
-                if _case and _case["title"] == self.matching_case_dict[case["title"]]:
-                    _case["highlighted"] = True                     
+                if _case and _case["title"] in self.matching_case_dict[case["title"]]:
+                    _case["highlighted"] = True                       
         
         case["highlighted"] = True
         self.unmatched_case_model.layoutChanged.emit()
@@ -199,23 +198,32 @@ class ImportExclusiveAndBatchWindow(QWidget):
         case = self.search_results_model.data(index, Qt.DisplayRole)
         if not case:
             return
+        
+        # 如果self.matching_case_dict[self.current_unmatched_case]有值，且当前index选中了同一个case，则取消匹配
+        if self.current_unmatched_case in self.matching_case_dict and case["title"] in self.matching_case_dict[self.current_unmatched_case]:
+            self.matching_case_dict[self.current_unmatched_case].remove(case["title"])
+            if len(self.matching_case_dict[self.current_unmatched_case]) == 0:
+                del self.matching_case_dict[self.current_unmatched_case]
+            self.matching_case_num = len(self.matching_case_dict)
+            case["highlighted"] = False
+            self.search_results_model.layoutChanged.emit()
+        elif self.current_unmatched_case != "":
+            if self.current_unmatched_case not in self.matching_case_dict:
+                self.matching_case_dict[self.current_unmatched_case] = []
+            if case["title"] not in self.matching_case_dict[self.current_unmatched_case]:
+                self.matching_case_dict[self.current_unmatched_case].append(case["title"])
+            self.matching_case_num = len(self.matching_case_dict)
+            
         # search_results_model其他所有的case背景颜色恢复
         for row in range(self.search_results_model.rowCount()):
             _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
             if _case:
                 _case["highlighted"] = False
-        case["highlighted"] = True
+        for row in range(self.search_results_model.rowCount()):
+            _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
+            if _case and _case["title"] in self.matching_case_dict[self.current_unmatched_case]:
+                _case["highlighted"] = True             
         self.search_results_model.layoutChanged.emit()
-        
-        # 如果self.matching_case_dict[self.current_unmatched_case]有值，且当前index选中了同一个case，则取消匹配
-        if self.current_unmatched_case in self.matching_case_dict and self.matching_case_dict[self.current_unmatched_case] == case["title"]:
-            del self.matching_case_dict[self.current_unmatched_case]
-            self.matching_case_num = len(self.matching_case_dict)
-            case["highlighted"] = False
-            self.search_results_model.layoutChanged.emit()
-        elif self.current_unmatched_case != "":
-            self.matching_case_dict[self.current_unmatched_case] = case["title"] 
-            self.matching_case_num = len(self.matching_case_dict)
 
     def on_source_selected(self, index):
         self.data_source = self.source_combo.currentText()
@@ -294,9 +302,7 @@ class ImportExclusiveAndBatchWindow(QWidget):
         self.overlay.timer.stop()
 
     def on_confirm_clicked(self):
-        """确认按钮点击事件"""
-        print(self.matching_case_dict)
-        
+        """确认按钮点击事件"""    
         self.batch = self.batch_input.text()
         if self.batch == "":
             QMessageBox.warning(self, "警告", "请输入批次！")
@@ -304,10 +310,14 @@ class ImportExclusiveAndBatchWindow(QWidget):
         self.batch = int(self.batch)
         
         if len(self.matching_case_dict) == self.unmatched_case_num:
-            for key, value in self.matching_case_dict.items():
-                if value == "未匹配":
-                    continue
-                updateCase(value, alias=key, batch=self.batch, owner_name=self.data_source, is_exclusive=self.is_exclusive)
+            for key, values in self.matching_case_dict.items():
+                # if value == "未匹配":
+                #     continue
+                # updateCase(value, alias=key, batch=self.batch, owner_name=self.data_source, is_exclusive=self.is_exclusive)
+                for value in values:
+                    if value == "未匹配":
+                        continue
+                    updateCase(value, alias=key, batch=self.batch, owner_name=self.data_source, is_exclusive=self.is_exclusive)
                 
         self.init_list()
         
@@ -335,8 +345,8 @@ class ImportExclusiveAndBatchWindow(QWidget):
             if self.current_unmatched_case in self.matching_case_dict:
                 for row in range(self.search_results_model.rowCount()):
                     _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
-                    if _case and _case["title"] == self.matching_case_dict[self.current_unmatched_case]:
-                        _case["highlighted"] = True         
+                    if _case and _case["title"] in self.matching_case_dict[self.current_unmatched_case]:
+                        _case["highlighted"] = True   
             
             self.search_results_model.layoutChanged.emit()
         else:

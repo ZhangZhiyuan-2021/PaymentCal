@@ -158,7 +158,7 @@ class ImportBrowseDownloadDataWindow(QWidget):
         
         self.calc_year_input = QLineEdit()
         self.calc_year_input.setValidator(QIntValidator(0, 9999, self))  # 只允许输入 0-9999
-        self.calc_year_input.setPlaceholderText("要计算的年份,默认今年")
+        self.calc_year_input.setPlaceholderText("结算年份,默认为今年,结算去年稿酬")
         self.calc_year_input.setStyleSheet("""
             QLineEdit {
                 border: 2px solid #D1C4E9;
@@ -185,7 +185,7 @@ class ImportBrowseDownloadDataWindow(QWidget):
                 border: 2px solid #7b56f0;
             }
         """)
-        self.decimal_input.setPlaceholderText("浏览量折扣因子,默认为1")
+        self.decimal_input.setPlaceholderText("浏览量折扣因子,默认为0.3")
         # self.decimal_input.setFixedHeight(40)
         
         self.total_money_input = QLineEdit()
@@ -301,8 +301,11 @@ class ImportBrowseDownloadDataWindow(QWidget):
             if self.current_unmatched_case in self.matching_case_dict:
                 for row in range(self.search_results_model.rowCount()):
                     _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
-                    if _case and _case["title"] == self.matching_case_dict[self.current_unmatched_case]:
-                        _case["highlighted"] = True         
+                    # if _case and _case["title"] == self.matching_case_dict[self.current_unmatched_case]:
+                    #     _case["highlighted"] = True     
+                    # 现在将self.matching_case_dict[self.current_unmatched_case]改为一个list，存储多个匹配项
+                    if _case and _case["title"] in self.matching_case_dict[self.current_unmatched_case]:
+                        _case["highlighted"] = True    
             
             self.search_results_model.layoutChanged.emit()
         else:
@@ -330,11 +333,13 @@ class ImportBrowseDownloadDataWindow(QWidget):
                 _case["highlighted"] = False
         # 如果当前case已经匹配，则高亮search_results_model中对应的case
         if case["title"] in self.matching_case_dict:
-            print(case["title"], self.matching_case_dict)
             for row in range(self.search_results_model.rowCount()):
                 _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
-                if _case and _case["title"] == self.matching_case_dict[case["title"]]:
-                    _case["highlighted"] = True                     
+                # if _case and _case["title"] == self.matching_case_dict[case["title"]]:
+                #     _case["highlighted"] = True        
+                # 现在将self.matching_case_dict[self.current_unmatched_case]改为一个list，存储多个匹配项
+                if _case and _case["title"] in self.matching_case_dict[case["title"]]:
+                    _case["highlighted"] = True             
         
         case["highlighted"] = True
         self.unmatched_case_model.layoutChanged.emit()
@@ -349,23 +354,41 @@ class ImportBrowseDownloadDataWindow(QWidget):
         case = self.search_results_model.data(index, Qt.DisplayRole)
         if not case:
             return
+        
+        # # 如果self.matching_case_dict[self.current_unmatched_case]有值，且当前index选中了同一个case，则取消匹配
+        # if self.current_unmatched_case in self.matching_case_dict and self.matching_case_dict[self.current_unmatched_case] == case["title"]:
+        #     del self.matching_case_dict[self.current_unmatched_case]
+        #     self.matching_case_num = len(self.matching_case_dict)
+        #     case["highlighted"] = False
+        #     self.search_results_model.layoutChanged.emit()
+        # 现在将self.matching_case_dict[self.current_unmatched_case]改为一个list，存储多个匹配项
+        if self.current_unmatched_case in self.matching_case_dict and case["title"] in self.matching_case_dict[self.current_unmatched_case]:
+            self.matching_case_dict[self.current_unmatched_case].remove(case["title"])
+            if len(self.matching_case_dict[self.current_unmatched_case]) == 0:
+                del self.matching_case_dict[self.current_unmatched_case]
+            self.matching_case_num = len(self.matching_case_dict)
+            case["highlighted"] = False
+            self.search_results_model.layoutChanged.emit()
+        elif self.current_unmatched_case != "":
+            # self.matching_case_dict[self.current_unmatched_case] = case["title"] 
+            # self.matching_case_num = len(self.matching_case_dict)
+            # 现在将self.matching_case_dict[self.current_unmatched_case]改为一个list，存储多个匹配项
+            if self.current_unmatched_case not in self.matching_case_dict:
+                self.matching_case_dict[self.current_unmatched_case] = []
+            if case["title"] not in self.matching_case_dict[self.current_unmatched_case]:
+                self.matching_case_dict[self.current_unmatched_case].append(case["title"])
+            self.matching_case_num = len(self.matching_case_dict)
+            
         # search_results_model其他所有的case背景颜色恢复
         for row in range(self.search_results_model.rowCount()):
             _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
             if _case:
                 _case["highlighted"] = False
-        case["highlighted"] = True
+        for row in range(self.search_results_model.rowCount()):
+            _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
+            if _case and _case["title"] in self.matching_case_dict[self.current_unmatched_case]:
+                _case["highlighted"] = True             
         self.search_results_model.layoutChanged.emit()
-        
-        # 如果self.matching_case_dict[self.current_unmatched_case]有值，且当前index选中了同一个case，则取消匹配
-        if self.current_unmatched_case in self.matching_case_dict and self.matching_case_dict[self.current_unmatched_case] == case["title"]:
-            del self.matching_case_dict[self.current_unmatched_case]
-            self.matching_case_num = len(self.matching_case_dict)
-            case["highlighted"] = False
-            self.search_results_model.layoutChanged.emit()
-        elif self.current_unmatched_case != "":
-            self.matching_case_dict[self.current_unmatched_case] = case["title"] 
-            self.matching_case_num = len(self.matching_case_dict)
 
     def on_source_selected(self, index):
         """当选择数据来源时触发"""
@@ -477,7 +500,6 @@ class ImportBrowseDownloadDataWindow(QWidget):
     
     def on_confirm_clicked(self):
         """确认按钮点击事件"""
-        print(self.matching_case_dict)
         if len(self.matching_case_dict) == 0:
             return
         if len(self.matching_case_dict) != self.unmatched_case_num:
@@ -490,27 +512,40 @@ class ImportBrowseDownloadDataWindow(QWidget):
         
     def update_Records(self):
         if self.data_source == "中国工商案例库":
-            for key, value in self.matching_case_dict.items():
-                if value == "未匹配":
-                    continue
-                updateCase(value, alias=key)
+            for key, values in self.matching_case_dict.items():
+                # if value == "未匹配":
+                #     continue
+                # updateCase(value, alias=key)
+                for value in values:
+                    if value == "未匹配":
+                        continue
+                    updateCase(value, alias=key)
+
             # 添加浏览记录和下载记录到数据库
             for key, value in self.unmatched_casename_to_download_record_Thu.items():
-                addDownloadRecord_Tsinghua(self.matching_case_dict[key], value['下载人账号'], value['下载时间'])
+                for case in self.matching_case_dict[key]:
+                    addDownloadRecord_Tsinghua(case, value['下载人账号'], value['下载时间'])
             for key, value in self.unmatched_casename_to_browse_record_Thu.items():
-                addBrowsingRecord_Tsinghua(self.matching_case_dict[key], value['浏览人账号'], value['浏览时间'])
+                for case in self.matching_case_dict[key]:
+                    addBrowsingRecord_Tsinghua(case, value['浏览人账号'], value['浏览时间'])
         else:
             self.huatu_year = self.year_input.text()
             if self.huatu_year == "":
                 QMessageBox.warning(self, "警告", "请输入年份！")
                 return
             
-            for key, value in self.matching_case_dict.items():
-                if value == "未匹配":
-                    continue
-                updateCase(value, alias=key)
+            for key, values in self.matching_case_dict.items():
+                # if value == "未匹配":
+                #     continue
+                # updateCase(value, alias=key)
+                for value in values:
+                    if value == "未匹配":
+                        continue
+                    updateCase(value, alias=key)
+                    
             for key, value in self.unmatched_casename_to_class_dict_huatu.items():
-                addBrowsingAndDownloadData_HuaTu(self.matching_case_dict[key], self.huatu_year, value['查看数'], value['邮件数'])
+                for case in self.matching_case_dict[key]:
+                    addBrowsingAndDownloadData_HuaTu(case, self.huatu_year, value['查看数'], value['邮件数'])
             
         return None
             
@@ -532,7 +567,7 @@ class ImportBrowseDownloadDataWindow(QWidget):
         try:
             decimal_value = float(decimal_value)
         except ValueError:
-            decimal_value = 1
+            decimal_value = 0.3
             
         total_money = self.total_money_input.text()
         try:

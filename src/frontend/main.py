@@ -163,6 +163,10 @@ class MainWindow(QWidget):
         set_button_style(self.import_case_button)
         self.import_case_button.clicked.connect(lambda: self.open_import_window(type='case'))
         
+        self.otherSchool_button = QPushButton("导入学校案例批次")
+        set_button_style(self.otherSchool_button)
+        self.otherSchool_button.clicked.connect(self.import_other_school)
+        
         self.import_bd_button = QPushButton("导入浏览下载量")
         set_button_style(self.import_bd_button)
         self.import_bd_button.clicked.connect(lambda: self.open_import_window(type='browse_download'))
@@ -172,21 +176,11 @@ class MainWindow(QWidget):
         line.setFrameShape(QFrame.HLine)
         line.setFrameShadow(QFrame.Sunken)
         line.setStyleSheet("color: #e0e0e0;")
-        
-        # self.royalty_button = QPushButton("导入历年版税")
-        # set_button_style(self.royalty_button)
-        # self.royalty_button.clicked.connect(self.import_royalty)
-        
-        self.otherSchool_button = QPushButton("导入学校案例批次")
-        set_button_style(self.otherSchool_button)
-        self.otherSchool_button.clicked.connect(self.import_other_school)
-        
-        #TODO 导出稿酬数据
-        
-        line2 = QFrame()
-        line2.setFrameShape(QFrame.HLine)
-        line2.setFrameShadow(QFrame.Sunken)
-        line2.setStyleSheet("color: #e0e0e0;")
+
+        # line2 = QFrame()
+        # line2.setFrameShape(QFrame.HLine)
+        # line2.setFrameShadow(QFrame.Sunken)
+        # line2.setStyleSheet("color: #e0e0e0;")
         
         self.export_payment_button = QPushButton("导出稿酬数据")
         set_button_style(self.export_payment_button)
@@ -206,11 +200,10 @@ class MainWindow(QWidget):
         self.export_button.clicked.connect(self.export_data)
         
         button_layout.addWidget(self.import_case_button)
+        button_layout.addWidget(self.otherSchool_button)
         button_layout.addWidget(self.import_bd_button)
         button_layout.addWidget(line)
-        # button_layout.addWidget(self.royalty_button)
-        button_layout.addWidget(self.otherSchool_button)
-        button_layout.addWidget(line2)
+        # button_layout.addWidget(line2)
         button_layout.addWidget(self.export_payment_button)
         button_layout.addWidget(line3)
         button_layout.addWidget(self.migrate_button)
