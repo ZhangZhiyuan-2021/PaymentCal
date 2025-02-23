@@ -101,9 +101,10 @@ class PaymentCalculatedYear(Base):
     year = Column(Integer, primary_key=True)
     is_calculated = Column(Boolean)
     new_case_number = Column(Integer)
+    total_payment = Column(Integer)
 
     def __repr__(self):
-        return "<PaymentCalculatedYear(year='%s', is_calculated='%s', new_case_number='%s')>" % (self.year, self.is_calculated, self.new_case_number)
+        return "<PaymentCalculatedYear(year='%s', is_calculated='%s', new_case_number='%s', total_payment='%s')>" % (self.year, self.is_calculated, self.new_case_number, self.total_payment)
     
 def init_db():
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
@@ -119,7 +120,23 @@ def init_db():
 
     years = session.query(PaymentCalculatedYear).all()
     years_dict = {year_item.year: year_item for year_item in years}
+    total_payments = {
+        2015: 270000,
+        2016: 220000,
+        2017: 344000,
+        2018: 288000,
+        2019: 617747,
+        2020: 667600,
+        2021: 985593,
+        2022: 688029,
+        2023: 822844,
+    }
     for year in range(2000, datetime.datetime.now().year + 1):
         if year not in years_dict:
-            session.add(PaymentCalculatedYear(year=year, is_calculated=False))
+            if year < 2015:
+                session.add(PaymentCalculatedYear(year=year, is_calculated=True, new_case_number=0, total_payment=0))
+            elif year in total_payments:
+                session.add(PaymentCalculatedYear(year=year, is_calculated=False, new_case_number=0, total_payment=total_payments[year]))
+            else:
+                session.add(PaymentCalculatedYear(year=year, is_calculated=False, new_case_number=0, total_payment=0))
     session.commit()

@@ -67,7 +67,23 @@ def readCaseList(path):
         # 先按案例标题查找，如不存在再按投稿编号查找
         case = cases_by_name_and_alias.get(case_title)
         if case:
-            print('案例已存在', case_title)
+            case.type = data_dict.get('产品类型')
+            try:
+                case.release_time = datetime.datetime.strptime(data_dict['发布时间'], "%Y-%m-%d %H:%M:%S.%f")
+                case.create_time = datetime.datetime.strptime(data_dict['创建时间'], "%Y-%m-%d %H:%M:%S.%f")
+            except Exception:
+                try:
+                    case.release_time = datetime.datetime.strptime(data_dict['发布时间'], "%Y-%m-%d %H:%M:%S")
+                    case.create_time = datetime.datetime.strptime(data_dict['创建时间'], "%Y-%m-%d %H:%M:%S")
+                except Exception as e:
+                    print("发布时间解析错误", data_dict['发布时间'])
+                    wrong_cases.append(data_dict)
+                    continue
+            case.is_micro = True if data_dict.get('是否微案例') == '微案例' else False
+            case.submission_source = data_dict.get('投稿来源')
+            case.contain_TN = True if data_dict.get('是否含有教学说明') == '是' else False
+            case.is_adapted_from_text = True if data_dict.get('是否由文字案例改编') == '是' else False
+            case.owner_name = owner.name
             continue
 
         submission_cases = cases_by_submission.get(submission_number)
@@ -97,7 +113,7 @@ def readCaseList(path):
                             print("发布时间解析错误", data_dict['发布时间'])
                             wrong_cases.append(data_dict)
                             continue
-                    case.is_micro = True if data_dict.get('是否微案例') == '是' else False
+                    case.is_micro = True if data_dict.get('是否微案例') == '微案例' else False
                     case.submission_source = data_dict.get('投稿来源')
                     case.contain_TN = True if data_dict.get('是否含有教学说明') == '是' else False
                     case.is_adapted_from_text = True if data_dict.get('是否由文字案例改编') == '是' else False
@@ -129,7 +145,7 @@ def readCaseList(path):
             submission_number=submission_number,
             release_time=release_time,
             create_time=create_time,
-            is_micro=True if data_dict.get('是否微案例') == '是' else False,
+            is_micro=True if data_dict.get('是否微案例') == '微案例' else False,
             is_exclusive = True, # 默认全为独家案例，从人大及浙大案例列表中获取非独家信息
             batch = 0,
             submission_source=data_dict.get('投稿来源'),
@@ -1292,6 +1308,7 @@ class calculatePaymentThread(QThread):
                 year_payment.is_calculated = True
             
         year_payment_by_year = {year_payment.year: year_payment for year_payment in year_payments}
+        year_payment_by_year[self.year[-1]].total_payment = self.total_payment
            
         for i, year in enumerate(self.years):
             self.year = year
@@ -1335,15 +1352,15 @@ class calculatePaymentThread(QThread):
 
             def calculatePaymentA(case):
                 if int(self.year) - case.release_time.year == 0:
-                    return self.total_payment * 0.7 * 0.35 / weight_payment
+                    return getattr(year_payment_by_year.get(int(self.year), object()), 'total_payment', 0) * 0.7 * 0.35 / weight_payment
                 elif int(self.year) - case.release_time.year == 1:
-                    return self.total_payment * 0.7 * 0.3 / weight_payment
+                    return getattr(year_payment_by_year.get(int(self.year), object()), 'total_payment', 0) * 0.7 * 0.3 / weight_payment
                 elif int(self.year) - case.release_time.year == 2:
-                    return self.total_payment * 0.7 * 0.2 / weight_payment
+                    return getattr(year_payment_by_year.get(int(self.year), object()), 'total_payment', 0) * 0.7 * 0.2 / weight_payment
                 elif int(self.year) - case.release_time.year == 3:
-                    return self.total_payment * 0.7 * 0.1 / weight_payment
+                    return getattr(year_payment_by_year.get(int(self.year), object()), 'total_payment', 0) * 0.7 * 0.1 / weight_payment
                 elif int(self.year) - case.release_time.year == 4:
-                    return self.total_payment * 0.7 * 0.05 / weight_payment
+                    return getattr(year_payment_by_year.get(int(self.year), object()), 'total_payment', 0) * 0.7 * 0.05 / weight_payment
                 else:
                     return 0
 
@@ -1595,17 +1612,18 @@ def exportCalculatedPayment(path):
     all_payments = session.query(Payment).all()
     payment_by_year = {}
     for payment in all_payments:
-        payment_by_year.setdefault(payment.year, []).append({
-            '案例标题': payment.case_name,
-            '出版年份': payment.case.release_time.year,
-            '总预付版税': payment.prepaid_payment,
-            '本年度续付版税': payment.renew_payment,
-            '总续付版税': payment.accumulated_payment,
-            '本年度实际应付预付版税': payment.real_prepaid_payment,
-            '本年度实际应付续付版税': payment.real_renew_payment,
-            '本年度实际应付预付版税（税后）': payment.real_prepaid_payment * 0.94,
-            '本年度实际应付续付版税（税后）': payment.real_renew_payment * 0.94,
-        })
+        if payment.case.release_time.year >= payment.year:
+            payment_by_year.setdefault(payment.year, []).append({
+                '案例标题': payment.case_name,
+                '出版年份': payment.case.release_time.year,
+                '总预付版税': payment.prepaid_payment,
+                '本年度续付版税': payment.renew_payment,
+                '总续付版税': payment.accumulated_payment,
+                '本年度实际应付预付版税': payment.real_prepaid_payment,
+                '本年度实际应付续付版税': payment.real_renew_payment,
+                '本年度实际应付预付版税（税后）': payment.real_prepaid_payment * 0.94,
+                '本年度实际应付续付版税（税后）': payment.real_renew_payment * 0.94,
+            })
         
     if not payment_by_year:
         print("没有数据需要导出")
@@ -1646,8 +1664,28 @@ def getPaymentCalculatedYear():
 
     result = {}
     for year_payment in year_payments:
-        result[year_payment.year] = year_payment.is_calculated
+        result[year_payment.year] = {
+            'is_calculated': year_payment.is_calculated,
+            'contain_total_payment': False if year_payment.year > 2014 and year_payment.total_payment == 0 else True,
+        }
 
     session.close()
 
     return result
+
+def updatePaymentCalculatedYear(year, total_payment):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    year_payment = session.query(PaymentCalculatedYear).filter_by(year=int(year)).first()
+    if not year_payment:
+        print('数据不存在')
+        return None
+
+    year_payment.total_payment = total_payment
+
+    session.commit()
+    session.close()
+
+    return year_payment
