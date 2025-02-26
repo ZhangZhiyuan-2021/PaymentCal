@@ -219,7 +219,12 @@ class ImportExclusiveAndBatchWindow(QWidget):
             missingInformationCases, unmatchedCases = readCaseExclusiveAndBatch(file_path, self.data_source, self.batch)
             
             if len(missingInformationCases) > 0:
-                missingInformationCases_Indexes = [f"序号：{i+1}，标题缺失！" for (i, case) in enumerate(missingInformationCases)]
+                for attr in missingInformationCases[0]:
+                    if '编' in attr:
+                        index_code = attr
+                        break
+                
+                missingInformationCases_Indexes = [f"编号：{case[index_code]}，标题缺失！" for case in missingInformationCases]
                 wrongcasedict = cases_name_to_widget_list(missingInformationCases_Indexes)
             
                 if not self.wrong_case_list_widget:

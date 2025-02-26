@@ -227,7 +227,13 @@ class ImportBrowseDownloadDataWindow(QWidget):
             return
              
         if self.data_source == "中国工商案例库":
-            (_, _, wrongBrowsingRecords, wrongDownloadRecords) = readBrowsingAndDownloadRecord_Tsinghua(file_path)
+            (missingInformationBrowsingRecords, missingInformationDownloadRecords, 
+                wrongBrowsingRecords, wrongDownloadRecords) = readBrowsingAndDownloadRecord_Tsinghua(file_path)
+            
+            if len(missingInformationBrowsingRecords) > 0 or len(missingInformationDownloadRecords) > 0:
+                QMessageBox.warning(self, "警告", "表格中信息不全！")
+                return
+            
             # 提取wrongBrowsingRecords和wrongDownloadRecords的案例名，存储在set中
             wrongCases = set()
             for record in wrongBrowsingRecords:

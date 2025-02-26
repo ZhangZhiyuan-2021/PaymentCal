@@ -115,9 +115,9 @@ class MainWindow(QWidget):
         line.setFrameShadow(QFrame.Sunken)
         line.setStyleSheet("color: #e0e0e0;")
         
-        self.royalty_button = QPushButton("导入历年版税")
-        set_button_style(self.royalty_button)
-        self.royalty_button.clicked.connect(self.import_royalty)
+        # self.royalty_button = QPushButton("导入历年版税")
+        # set_button_style(self.royalty_button)
+        # self.royalty_button.clicked.connect(self.import_royalty)
         
         self.otherSchool_button = QPushButton("导入学校案例批次")
         set_button_style(self.otherSchool_button)
@@ -139,7 +139,7 @@ class MainWindow(QWidget):
         button_layout.addWidget(self.import_case_button)
         button_layout.addWidget(self.import_bd_button)
         button_layout.addWidget(line)
-        button_layout.addWidget(self.royalty_button)
+        # button_layout.addWidget(self.royalty_button)
         button_layout.addWidget(self.otherSchool_button)
         button_layout.addWidget(line2)
         button_layout.addWidget(self.migrate_button)

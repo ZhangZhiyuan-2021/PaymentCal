@@ -73,9 +73,6 @@ class WrongCaseListWindow(WrongCaseListWidget):
     def __init__(self, wrong_cases):
         super().__init__(wrong_cases)
 
-        self.initUI()
-        
-    def initUI(self):
         self.setWindowTitle(" ")
         self.setWindowIcon(QIcon("img/tsinghua.ico"))
         self.setGeometry(600, 100, 1000, 700)
