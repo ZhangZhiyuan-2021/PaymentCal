@@ -1,8 +1,8 @@
 # Ignore database files
-*.db
-*.sqlite
-*.sqlite3
-*.db3
+# *.db
+# *.sqlite
+# *.sqlite3
+# *.db3
 
 # Ignore Visual Studio Code files
 .vscode/
