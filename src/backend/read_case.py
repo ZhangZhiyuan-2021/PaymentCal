@@ -947,6 +947,12 @@ def readBrowsingAndDownloadData_HuaTu(path, year):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
     Session = sessionmaker(bind=engine)
     session = Session()
+    
+    year_payment = session.query(PaymentCalculatedYear).filter_by(year=int(year)).first()
+    if not year_payment:
+        print('年度数据不存在')
+        return None, None
+    year_payment.is_calculated = False
 
     missingInformationData = []
     wrongData = []
@@ -1304,11 +1310,9 @@ class calculatePaymentThread(QThread):
         year_payments = session.query(PaymentCalculatedYear).all()
         for year_payment in year_payments:
             year_payment.new_case_number = len(cases_by_year.get(year_payment.year)) if cases_by_year.get(year_payment.year, None) else 0
-            if year_payment.new_case_number == 0:
-                year_payment.is_calculated = True
             
         year_payment_by_year = {year_payment.year: year_payment for year_payment in year_payments}
-        year_payment_by_year[self.year[-1]].total_payment = self.total_payment
+        year_payment_by_year[self.years[-1]].total_payment = self.total_payment
            
         for i, year in enumerate(self.years):
             self.year = year
@@ -1343,6 +1347,8 @@ class calculatePaymentThread(QThread):
 
             total_views = sum(payment.views for payment in all_payments if payment.year == int(self.year))
             total_downloads = sum(payment.downloads for payment in all_payments if payment.year == int(self.year))
+            
+            print(f'year: {self.year}, total_views: {total_views}, total_downloads: {total_downloads}')
             
             weight_payment = (0.35 * getattr(year_payment_by_year.get(int(self.year), object()), 'new_case_number', 0) 
                             + 0.3 * getattr(year_payment_by_year.get(int(self.year) - 1, object()), 'new_case_number', 0) 
@@ -1388,6 +1394,9 @@ class calculatePaymentThread(QThread):
                     A = calculatePaymentA(case)
                     B = calculatePaymentB(payment)
                     
+                    if case.name == '一个好汉三个帮：泓森农业的战略联盟之路' or case.name == '宁波摩多：外贸出海，“韧”重道远':
+                        print(f'case: {case.name}, A: {A}, B: {B}')
+                    
                     if '独立开发' in case.submission_source:
                         prepaid_payment = 8000
                     elif '合作开发' in case.submission_source:
@@ -1399,11 +1408,11 @@ class calculatePaymentThread(QThread):
                         prepaid_payment = prepaid_payment * 0.5
 
                     payment.prepaid_payment = prepaid_payment
-                    payment.renew_payment = 0 if case.is_adapted_from_text else A + B
+                    payment.renew_payment = 0 if case.is_adapted_from_text else (A + B)
                     if case.release_time.year < 2015:
                         payment.real_prepaid_payment = 0
                         payment.real_renew_payment = payment.renew_payment
-                        if self.year == 2000:
+                        if self.year == 2015:
                             payment.accumulated_payment = payment.renew_payment 
                         else:
                             last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(self.year) - 1), None)
@@ -1418,7 +1427,7 @@ class calculatePaymentThread(QThread):
                         payment.accumulated_payment = payment.renew_payment
                     else:
                         payment.real_prepaid_payment = 0
-                        if self.year == 2000:
+                        if self.year == 2015:
                             last_year_accumulated_payment = 0
                         else:
                             last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(self.year) - 1), None)
@@ -1450,7 +1459,7 @@ class calculatePaymentThread(QThread):
                     if case.release_time.year < 2015:
                         payment.real_prepaid_payment = 0
                         payment.real_renew_payment = payment.renew_payment
-                        if self.year == 2000:
+                        if self.year == 2015:
                             payment.accumulated_payment = payment.renew_payment
                         else:
                             last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(self.year) - 1), None)
@@ -1465,7 +1474,7 @@ class calculatePaymentThread(QThread):
                         payment.accumulated_payment = payment.renew_payment
                     else:
                         payment.real_prepaid_payment = 0
-                        if self.year == 2000:
+                        if self.year == 2015:
                             last_year_accumulated_payment = 0
                         else:
                             last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(self.year) - 1), None)
@@ -1511,7 +1520,7 @@ class calculatePaymentThread(QThread):
                     if int(self.year) == case.release_time.year:
                         payment.accumulated_payment = prepaid_payment
                     else:
-                        if self.year == 2000:
+                        if self.year == 2015:
                             payment.accumulated_payment = prepaid_payment
                         else:
                             last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(self.year) - 1), None)
@@ -1612,7 +1621,7 @@ def exportCalculatedPayment(path):
     all_payments = session.query(Payment).all()
     payment_by_year = {}
     for payment in all_payments:
-        if payment.case.release_time.year >= payment.year:
+        if payment.case.release_time.year <= payment.year:
             payment_by_year.setdefault(payment.year, []).append({
                 '案例标题': payment.case_name,
                 '出版年份': payment.case.release_time.year,
@@ -1633,8 +1642,9 @@ def exportCalculatedPayment(path):
     with pd.ExcelWriter(path) as writer:
             at_least_one_sheet = False  # 用于跟踪是否有有效的工作表
 
-            for year, payments in payment_by_year.items():
-                df = pd.DataFrame(payments)
+            years = sorted(payment_by_year.keys(), reverse=True)
+            for year in years:
+                df = pd.DataFrame(payment_by_year[year])
                 # 检查 DataFrame 是否为空
                 if not df.empty:
                     at_least_one_sheet = True

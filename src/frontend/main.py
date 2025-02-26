@@ -1,7 +1,7 @@
 import sys
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, QHBoxLayout,
-    QFrame, QFileDialog, QMessageBox
+    QFrame, QFileDialog, QMessageBox, QInputDialog
 )
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import Qt, QEvent

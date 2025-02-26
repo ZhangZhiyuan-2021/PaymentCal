@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, 
     QLabel, QComboBox, QProgressBar, QSizePolicy, QSpacerItem, QFileDialog, QMessageBox,
-    QLineEdit, QCheckBox
+    QLineEdit, QCheckBox, QInputDialog
 )
 from PyQt5.QtGui import QFont, QIcon, QIntValidator, QPainter, QPen, QColor, QDoubleValidator
 from PyQt5.QtCore import Qt, QTimer, QEvent
@@ -234,7 +234,7 @@ class ImportBrowseDownloadDataWindow(QWidget):
         self.calc_button.clicked.connect(self.on_calc_clicked)
         self.calc_button.setFocusPolicy(Qt.NoFocus)
         
-        self.export_button = QPushButton("导出版税")
+        self.export_button = QPushButton("导出全部稿酬数据")
         set_button_style(self.export_button, 40)
         self.export_button.clicked.connect(self.on_export_clicked)
         
@@ -416,6 +416,10 @@ class ImportBrowseDownloadDataWindow(QWidget):
             self.read_thread.progress.connect(self.load_progress_bar.update_progress)
             self.read_thread.start()    
         else:     
+            self.huatu_year = self.year_input.text()
+            if self.huatu_year == "":
+                QMessageBox.warning(self, "警告", "请输入年份！")
+                return
             self.thread: LoadingUIThread = LoadingUIThread(readBrowsingAndDownloadData_HuaTu, file_path, self.huatu_year)
             self.thread.data_loaded.connect(self.readBrowsingAndDownloadData_HuaTu_finished)
             self.thread.start()
@@ -467,6 +471,19 @@ class ImportBrowseDownloadDataWindow(QWidget):
         
     def readBrowsingAndDownloadData_HuaTu_finished(self, returns):
         (missingInformationData, wrongData) = returns
+        
+        # wrongData去除给定的，不管了
+        ignoredCases = [
+            "欧盟对华节能灯企业反倾销调查案", "上海家化的“佰草集”业务战略（A）", "上海家化的“佰草集”业务战略（B）",
+            "上海家化的“佰草集”业务战略（C）", "苏宁电器（B）", "TCL与阿尔卡特的联盟合作", "河北长天药业分销渠道建设与策略(A)",
+            "快智集团：手机打车软件", "青岛特锐德电气股份有限公司（英文）", "雷士照明：股权搏击的背后", "麦考林：永不落幕的“女性百货商店”",
+            "锐仕方达：创业与变革", "黄昏落日还是东升旭日？——联想一体电脑发展策略", "白沙品牌的成长之路", "商务谈判案例-桔子的故事",
+            "上海海之门房地产管理有限公司：优先购买权", "中国经济的结构失衡", "中国的贸易不平衡与人民币汇率", "方正的多元化(英文)",
+            "天融环保的虚拟团队组织", "方太的文化管理", "MeizhouDongpoRestaurantGroup", "眉州东坡集团", "Dana的抉择（A）",
+            "明天的道路-安徽桑乐金股份有限公司", "宜农贷——一种新型的电子商务平台", "阿里小贷的小额贷款证券化", "Changhong:JourneytoSharedServices", 
+            "柯达数字化发展战略"
+        ]
+        wrongData = [case for case in wrongData if case['标题'] not in ignoredCases]
         
         if len(missingInformationData) > 0:
             wrongcasedict = cases_huatu_to_widget_list(missingInformationData) 
@@ -575,18 +592,41 @@ class ImportBrowseDownloadDataWindow(QWidget):
         except ValueError:
             QMessageBox.warning(self, "警告", "请输入正确的总金额！")
             return
+        
+        # 获取往年是否被计算过，确保过去每年都被计算过
+        paymentCalcMessages: dict = getPaymentCalculatedYear()
+        years = []
+        years_total_payment = {}
+        for check_year in range(2001, year):
+            paymentCalcMessage = paymentCalcMessages.get(check_year-1, None)
+            if paymentCalcMessage is None:
+                QMessageBox.warning(self, "警告", f"年份错误！")
+                return
+            if paymentCalcMessage.get('is_calculated', False) == False:
+                years.append(check_year-1)
+            if paymentCalcMessage.get('contain_total_payment', False) == False:
+                years_total_payment[check_year] = 0
+        years.append(year-1)
+        
+        if len(years_total_payment) > 0:
+            msg_box = QMessageBox()
+            msg_box.setIcon(QMessageBox.Warning)
+            msg_box.setWindowTitle(" ")
+            msg_box.setText("部分年份未填写总金额，请手动填写！")
+            msg_box.exec_()
+            
+            for year in years_total_payment.keys():
+                total_payment, ok = QInputDialog.getInt(self, "输入总金额", f"请输入{year}年的总金额。如今年是2025年,支付24年稿酬,则应输入25年总收入的20%", 0, 0, 999999999, 1)
+                if ok:
+                    years_total_payment[year] = total_payment
+                    updatePaymentCalculatedYear(year, total_payment)
+                else:
+                    return
             
         square_root_selected = self.square_root_checkbox.isChecked()
         
         self.overlay.show_loading_animation()
-        # 获取往年是否被计算过，确保过去每年都被计算过
-        paymentCalcMessage: dict = getPaymentCalculatedYear()
-        years = []
-        for check_year in range(2001, year):
-            if paymentCalcMessage.get(check_year-1, False) == False:
-                years.append(check_year-1)
-        years.append(year-1)
-            
+ 
         self.calc_thread: calculatePaymentThread = calculatePaymentThread(years, total_money, decimal_value, square_root_selected)
         self.calc_thread.finished.connect(self.calculatePayment_finished)
         self.calc_thread.progress.connect(self.calc_progress_bar.update_progress)

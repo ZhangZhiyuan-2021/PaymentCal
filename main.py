@@ -1,22 +1,28 @@
 from src.backend.read_case import *
 from src.db.init_db import init_db
 from src.frontend.main import app
+from PyQt5.QtWidgets import QInputDialog
 
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, MetaData
+from sqlalchemy.ext.declarative import declarative_base
+
 
 
 def main():
     init_db()
     app()
-
-    # # 初始化数据库连接
+    
+    
+    
+    # # # 初始化数据库连接
     # engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
-    # Session = sessionmaker(bind=engine)
-    # session = Session()
+    # maker = sessionmaker(bind=engine)
+    # session = maker()
+    # # PaymentCalculatedYear.__table__.drop(engine)
 
     # # 更新 payment_calculated_year 表中的所有行，将 is_calculated 列设置为 False
-    # session.query(PaymentCalculatedYear).update({PaymentCalculatedYear.is_calculated: False})
+    # session.query(PaymentCalculatedYear).filter_by(year=2023).update({PaymentCalculatedYear.is_calculated: False})
 
     # # 提交更改
     # session.commit()

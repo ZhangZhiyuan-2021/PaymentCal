@@ -131,6 +131,7 @@ def init_db():
         2022: 688029,
         2023: 822844,
     }
+    # print(datetime.datetime.now().year + 1)
     for year in range(2000, datetime.datetime.now().year + 1):
         if year not in years_dict:
             if year < 2015:
