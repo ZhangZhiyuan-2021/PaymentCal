@@ -13,21 +13,18 @@ def main():
     init_db()
     app()
     
-    
-    
-    # # # 初始化数据库连接
     # engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
     # maker = sessionmaker(bind=engine)
     # session = maker()
-    # # PaymentCalculatedYear.__table__.drop(engine)
+    # Payment.__table__.drop(engine)
+    # PaymentCalculatedYear.__table__.drop(engine)
+
+    # init_db()
 
     # # 更新 payment_calculated_year 表中的所有行，将 is_calculated 列设置为 False
-    # session.query(PaymentCalculatedYear).filter_by(year=2023).update({PaymentCalculatedYear.is_calculated: False})
+    # year = session.query(PaymentCalculatedYear).update({PaymentCalculatedYear.is_calculated: False})
 
-    # # 提交更改
     # session.commit()
-
-    # # 关闭会话
     # session.close()
 
     # readCaseList('data/test.xls')

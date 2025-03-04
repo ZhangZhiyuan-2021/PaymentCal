@@ -167,7 +167,6 @@ def readCaseExclusiveAndBatch(path, owner_name, batch):
     df.dropna(axis=0, how='all', inplace=True)
     data_dict_list = df.to_dict(orient='records')
     title = None
-    print(data_dict_list[0])
     for attr in data_dict_list[0]:
         if '标题' in attr:
             title = attr
@@ -689,7 +688,8 @@ def addBrowsingRecord_Tsinghua(case_name, browser, datetime):
     record = BrowsingRecord(
         case_name=case.name,
         browser=browser, 
-        datetime=datetime
+        datetime=datetime,
+        is_valid=None
     )
     session.add(record)
     session.commit()
@@ -717,7 +717,8 @@ def addDownloadRecord_Tsinghua(case_name, downloader, datetime):
     record = DownloadRecord(
         case_name=case.name,
         downloader=downloader, 
-        datetime=datetime
+        datetime=datetime,
+        is_valid=None
     )
     session.add(record)
     session.commit()
@@ -1032,10 +1033,12 @@ def addBrowsingAndDownloadData_HuaTu(case_name, year, views, downloads):
             break
 
     if not huatu_data:
-        huatu_data = HuaTuData(case_name=case.name, 
-                               year=int(year), 
-                               views=int(views), 
-                               downloads=int(downloads))
+        huatu_data = HuaTuData(
+            case_name=case.name, 
+            year=int(year), 
+            views=int(views), 
+            downloads=int(downloads)
+        )
         session.add(huatu_data)
     else:
         huatu_data.views = views
@@ -1220,6 +1223,411 @@ def exportHuaTuData(path, year=None):
 
     session.close()
 
+def readYiWeiData(path, year):
+    df = pd.read_excel(path)
+    data_dict_list = df.to_dict(orient='records')
+    title, payment = None, None    
+    for attr in data_dict_list[0]:
+        if '标题' in attr:
+            title = attr
+        if '收入' in attr:
+            payment = attr
+    if not title or not payment:
+        print('标题或收入字段不存在')
+        return
+
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    missingInformationData = []
+    wrongData = []
+
+    # -------------------------------
+    # 预加载所有案例数据
+    all_cases = session.query(Case).all()
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
+
+    # -------------------------------
+    # 遍历 Excel 数据，更新或新增 YiWeiData
+    for data_dict in data_dict_list:
+        # 检查必填字段
+        if (pd.isna(data_dict.get(title)) or data_dict.get(title).strip() == '' or
+            pd.isna(data_dict.get(payment)) or str(data_dict.get(payment)).strip() == ''):
+            missingInformationData.append(data_dict)
+            continue
+
+        data_dict[title] = data_dict[title].replace(' ', '').replace('　', '')
+        case = cases_by_name_and_alias.get(data_dict[title])
+        if not case:
+            print('案例不存在:', data_dict[title])
+            wrongData.append(data_dict)
+        elif case.owner_name != '毅伟':
+            print('案例不属于毅伟:', data_dict[title])
+            wrongData.append(data_dict)
+
+        yiwei_data = None
+        for data in case.payments:
+            if data.year == int(year):
+                yiwei_data = data
+                break
+
+        if not yiwei_data:
+            # 不存在，则新建，并加入 yiwei_dict 以便后续使用
+            yiwei_data = Payment(
+                case_name=case.name,
+                year=int(year),
+                views=0,
+                downloads=0,
+                prepaid_payment=0,
+                renew_payment=0,
+                real_prepaid_payment=0,
+                real_renew_payment=0,
+                accumulated_payment=0,
+                real_payment=0,
+                is_paid=0,
+                accumulated_lack_payment=0,
+                retail_payment=float(data_dict[payment])
+            )
+            session.add(yiwei_data)
+        else:
+            # 存在则更新数据
+            yiwei_data.retail_payment = float(data_dict[payment])
+
+    session.commit()
+    session.close()
+
+    return missingInformationData, wrongData
+
+def addYiWeiData(case_name, year, retail_payment):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    all_cases = session.query(Case).all()
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
+    case_name = case_name.replace(' ', '').replace('　', '')
+    case = cases_by_name_and_alias.get(case_name)
+    if not case:
+        print('案例不存在', case_name)
+        return None
+
+    yiwei_data = None
+    for data in case.payments:
+        if data.year == int(year):
+            yiwei_data = data
+            break
+
+    if not yiwei_data:
+        yiwei_data = Payment(
+            case_name=case.name, 
+            year=int(year), 
+            views=0,
+            downloads=0,
+            prepaid_payment=0,
+            renew_payment=0,
+            real_prepaid_payment=0,
+            real_renew_payment=0,
+            accumulated_payment=0,
+            real_payment=0,
+            is_paid=0,
+            accumulated_lack_payment=0,
+            retail_payment=float(retail_payment)
+        )
+        session.add(yiwei_data)
+    else:
+        yiwei_data.retail_payment = retail_payment
+    session.commit()
+
+    session.close()
+
+    return yiwei_data
+
+def getYiWeiYearData():
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    yiwei_data = sorted([x[0] for x in session.query(Payment.year).distinct()], reverse=True)
+
+    session.close()
+
+    return yiwei_data
+
+def getYiWeiData(case_name=None, year=None, retail_payment=None):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    all_cases = session.query(Case).all()
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
+
+    if case_name:
+        case_name = case_name.replace(' ', '').replace('　', '')
+        case = cases_by_name_and_alias.get(case_name)
+        if not case:
+            print('案例不存在')
+            return None
+        yiwei_data = case.payments
+    else:
+        yiwei_data = session.query(Payment).all()
+
+    if not yiwei_data:
+        print('数据不存在')
+        return None
+    
+    if year:
+        yiwei_data = [yiwei_data for yiwei_data in yiwei_data if yiwei_data.year == int(year)]
+    if retail_payment:
+        yiwei_data = [yiwei_data for yiwei_data in yiwei_data if yiwei_data.retail_payment == float(retail_payment)]
+
+    session.close()
+
+    return yiwei_data
+
+def deleteYiWeiData(case_name=None, year=None, retail_payment=None):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    all_cases = session.query(Case).all()
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
+
+    if case_name:
+        case_name = case_name.replace(' ', '').replace('　', '')
+        case = cases_by_name_and_alias.get(case_name)
+        if not case:
+            print('案例不存在')
+            return None
+        yiwei_data = case.payments
+    else:
+        yiwei_data = session.query(Payment).all()
+
+    if not yiwei_data:
+        print('数据不存在')
+        return None
+
+    if year:
+        yiwei_data = [yiwei_data for yiwei_data in yiwei_data if yiwei_data.year == int(year)]
+    if retail_payment:
+        yiwei_data = [yiwei_data for yiwei_data in yiwei_data if yiwei_data.retail_payment == float(retail_payment)]
+
+    for data in yiwei_data:
+        session.delete(data)
+
+    session.commit()
+    session.close()
+
+    return yiwei_data
+
+def readRealPaymentData(path):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    missingInformationData = []
+    wrongData = []
+
+    # -------------------------------
+    # 预加载所有案例数据
+    all_cases = session.query(Case).all()
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
+
+    xls = pd.ExcelFile(path)
+    for sheet_name in sorted(xls.sheet_names, key=lambda x: int(x)):
+        df = xls.parse(sheet_name)
+        data_dict_list = df.to_dict(orient='records')
+
+        if len(data_dict_list) == 0:
+            continue
+
+        title, payment_title, real_payment_title = None, None
+        for attr in data_dict_list[0]:
+            if '标题' in attr:
+                title = attr
+            if '应付' in attr:
+                payment_title = attr
+            if '实付' in attr:
+                real_payment_title = attr
+        if not title or not real_payment_title:
+            print('标题或收入字段不存在')
+            continue
+
+        # -------------------------------
+        # 遍历 Excel 数据，更新或新增 Payment
+        for data_dict in data_dict_list:
+            # 检查必填字段
+            if (pd.isna(data_dict.get(title)) or data_dict.get(title).strip() == '' or
+                pd.isna(data_dict.get(real_payment_title)) or str(data_dict.get(real_payment_title)).strip() == ''):
+                missingInformationData.append(data_dict)
+                continue
+
+            data_dict[title] = data_dict[title].replace(' ', '').replace('　', '')
+            case = cases_by_name_and_alias.get(data_dict[title])
+            if not case:
+                print('案例不存在:', data_dict[title])
+                wrongData.append(data_dict)
+                continue
+
+            payment = next((pay for pay in case.payments if pay.year == int(sheet_name)), None)
+            if not payment:
+                # 不存在，则新建，并加入 payment_dict 以便后续使用
+                payment = Payment(
+                    case_name=case.name,
+                    year=int(sheet_name),
+                    views=0,
+                    downloads=0,
+                    prepaid_payment=0,
+                    renew_payment=0,
+                    real_prepaid_payment=0,
+                    real_renew_payment=0,
+                    accumulated_payment=0,
+                    is_paid=0,
+                    accumulated_lack_payment=0,
+                    real_payment=float(data_dict[real_payment_title]),
+                    retail_payment=0,
+                )
+                session.add(payment)
+            else:
+                # 存在则更新数据
+                payment.real_payment = float(data_dict[real_payment_title])
+
+            if int(sheet_name) < 2024:
+                payment.prepaid_payment, payment.renew_payment, payment.real_prepaid_payment = 0, 0, 0
+                payment.real_renew_payment = float(data_dict[payment_title])
+                if int(sheet_name) == 2015:
+                    payment.accumulated_payment = float(data_dict[payment_title])
+                else:
+                    # 查找上一年的数据并累积
+                    last_year_payment = next((pay for pay in case.payments if pay.year == int(sheet_name) - 1), None)
+                    if last_year_payment:
+                        payment.accumulated_payment = last_year_payment.accumulated_payment + float(data_dict[payment_title])
+
+            if int(sheet_name) == 2015:
+                if abs(float(data_dict[real_payment_title])) < 1e-6:
+                    payment.is_paid = False
+                    payment.accumulated_lack_payment = float(data_dict[payment_title])
+                else:
+                    payment.is_paid = True
+                    payment.accumulated_lack_payment = 0
+            else:
+                if abs(float(data_dict[real_payment_title])) < 1e-6:
+                    payment.is_paid = False
+                    # 查找上一年的数据并累积
+                    last_year_payment = next((pay for pay in case.payments if pay.year == int(sheet_name) - 1), None)
+                    if last_year_payment:
+                        payment.accumulated_lack_payment = last_year_payment.accumulated_lack_payment + payment.real_prepaid_payment + payment.real_renew_payment
+                else:
+                    pay = next((pay for pay in case.payments if pay.year == int(sheet_name) - 1), None)
+                    if pay and pay.is_paid:
+                        payment.accumulated_lack_payment = 0
+                        payment.is_paid = True
+                    else:
+                        # 查找今年及之前的所有未支付，全部设置为已支付，其中未支付全部在已支付的年份后面，且是连续的
+                        for pay in case.payments:
+                            if pay.year <= int(sheet_name) and not pay.is_paid:
+                                pay.is_paid = True
+                                pay.accumulated_lack_payment = 0
+
+    session.commit()
+    session.close()
+
+    return missingInformationData, wrongData
+
+def getRealPaymentData(case_name=None, year=None, retail_payment=None):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    all_cases = session.query(Case).all()
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
+
+    if case_name:
+        case_name = case_name.replace(' ', '').replace('　', '')
+        case = cases_by_name_and_alias.get(case_name)
+        if not case:
+            print('案例不存在')
+            return None
+        real_payment = case.payments
+    else:
+        real_payment = session.query(Payment).all()
+
+    if not real_payment:
+        print('数据不存在')
+        return None
+    
+    if year:
+        real_payment = [real_payment for real_payment in real_payment if real_payment.year == int(year)]
+    if retail_payment:
+        real_payment = [real_payment for real_payment in real_payment if real_payment.retail_payment == int(retail_payment)]
+
+    session.close()
+
+    return real_payment
+
+def deleteRealPaymentData(case_name=None, year=None, retail_payment=None):
+    engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    all_cases = session.query(Case).all()
+    cases_by_name_and_alias = {}
+    for case in all_cases:
+        name_and_alias = list(set(json.loads(case.alias) + [case.name]))
+        for name_or_alias in name_and_alias:
+            cases_by_name_and_alias[name_or_alias] = case
+
+    if case_name:
+        case_name = case_name.replace(' ', '').replace('　', '')
+        case = cases_by_name_and_alias.get(case_name)
+        if not case:
+            print('案例不存在')
+            return None
+        real_payment = case.payments
+    else:
+        real_payment = session.query(Payment).all()
+
+    if not real_payment:
+        print('数据不存在')
+        return None
+
+    if year:
+        real_payment = [real_payment for real_payment in real_payment if real_payment.year == int(year)]
+    if retail_payment:
+        real_payment = [real_payment for real_payment in real_payment if real_payment.retail_payment == int(retail_payment)]
+
+    for payment in real_payment:
+        session.delete(payment)
+
+    session.commit()
+    session.close()
+
+    return real_payment
+
 # TODO 打包之前删去 print
 class calculatePaymentThread(QThread):
     finished = pyqtSignal()
@@ -1312,6 +1720,7 @@ class calculatePaymentThread(QThread):
             year_payment.new_case_number = len(cases_by_year.get(year_payment.year)) if cases_by_year.get(year_payment.year, None) else 0
             
         year_payment_by_year = {year_payment.year: year_payment for year_payment in year_payments}
+        year_payment_by_year[self.years[-1]].is_calculated = False
         year_payment_by_year[self.years[-1]].total_payment = self.total_payment
            
         for i, year in enumerate(self.years):
@@ -1335,14 +1744,27 @@ class calculatePaymentThread(QThread):
 
                 payment = next((pay for pay in payment_by_case.get(case.name, []) if pay.year == int(self.year)), None)
                 if not payment:
-                    payment = Payment(case_name=case.name, year=int(self.year), views=views, downloads=downloads)
+                    payment = Payment(
+                        case_name=case.name, 
+                        year=int(self.year), 
+                        views=views,
+                        downloads=downloads,
+                        prepaid_payment=0,
+                        renew_payment=0,
+                        real_prepaid_payment=0,
+                        real_renew_payment=0,
+                        accumulated_payment=0,
+                        real_payment=0,
+                        is_paid=0,
+                        accumulated_lack_payment=0,
+                        retail_payment=0,
+                    )
                     payment_by_case.setdefault(case.name, []).append(payment)
                     session.add(payment)
                 else:
                     payment.views = views
                     payment.downloads = downloads
                     
-            # self.progress.emit(int(60*/len(self.years)))
             self.progress.emit(int(60 + (100-60) * i / len(self.years)))
 
             total_views = sum(payment.views for payment in all_payments if payment.year == int(self.year))
@@ -1394,9 +1816,6 @@ class calculatePaymentThread(QThread):
                     A = calculatePaymentA(case)
                     B = calculatePaymentB(payment)
                     
-                    if case.name == '一个好汉三个帮：泓森农业的战略联盟之路' or case.name == '宁波摩多：外贸出海，“韧”重道远':
-                        print(f'case: {case.name}, A: {A}, B: {B}')
-                    
                     if '独立开发' in case.submission_source:
                         prepaid_payment = 8000
                     elif '合作开发' in case.submission_source:
@@ -1417,8 +1836,8 @@ class calculatePaymentThread(QThread):
                         else:
                             last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(self.year) - 1), None)
                             if not last_year_payment:
+                                print(1)
                                 print('案例缺少从前年份计算结果')
-                                # return case
                                 return
                             payment.accumulated_payment = payment.renew_payment + last_year_payment.accumulated_payment
                     elif int(self.year) == case.release_time.year:
@@ -1432,8 +1851,8 @@ class calculatePaymentThread(QThread):
                         else:
                             last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(self.year) - 1), None)
                             if not last_year_payment:
+                                print(2)
                                 print('案例缺少从前年份计算结果')
-                                # return case
                                 return
                             last_year_accumulated_payment = last_year_payment.accumulated_payment
                         payment.accumulated_payment = payment.renew_payment + last_year_accumulated_payment
@@ -1464,8 +1883,8 @@ class calculatePaymentThread(QThread):
                         else:
                             last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(self.year) - 1), None)
                             if not last_year_payment:
+                                print(3)
                                 print('案例缺少从前年份计算结果')
-                                # return case
                                 return
                             payment.accumulated_payment = payment.renew_payment + last_year_payment.accumulated_payment
                     elif int(self.year) == case.release_time.year:
@@ -1479,8 +1898,8 @@ class calculatePaymentThread(QThread):
                         else:
                             last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(self.year) - 1), None)
                             if not last_year_payment:
+                                print(4)
                                 print('案例缺少从前年份计算结果')
-                                # return case
                                 return
                             last_year_accumulated_payment = last_year_payment.accumulated_payment
                         payment.accumulated_payment = payment.renew_payment + last_year_accumulated_payment
@@ -1525,8 +1944,8 @@ class calculatePaymentThread(QThread):
                         else:
                             last_year_payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(self.year) - 1), None)
                             if not last_year_payment:
+                                print(5)
                                 print('案例缺少从前年份计算结果')
-                                # return case
                                 return
                             payment.accumulated_payment = prepaid_payment + last_year_payment.accumulated_payment
                     
@@ -1538,15 +1957,11 @@ class calculatePaymentThread(QThread):
             print(year_payment.year, year_payment.new_case_number)
             year_payment.is_calculated = True
 
-        # for year_payment in year_payments:
-        #     print(year_payment.year, year_payment.new_case_number, year_payment.is_calculated)
-
         session.commit()
         session.close()
             
         self.progress.emit(100)
         self.finished.emit()
-# def calculatePayment(year, total_payment, process_views):
 
 def getCalculatedPaymentByYear(year):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
@@ -1558,25 +1973,20 @@ def getCalculatedPaymentByYear(year):
         print('数据不存在')
         return None
 
-    tax_deducted_result = {}
-    non_tax_deducted_result = {}
+    result = {}
     for payment in year_payments:
-        tax_deducted_result[payment.case_name] = {
-            'prepaid_payment': payment.prepaid_payment,
-            'renew_payment': payment.renew_payment,
-            'real_prepaid_payment': payment.real_prepaid_payment * 0.94,
-            'real_renew_payment': payment.real_renew_payment * 0.94,
-        }
-        non_tax_deducted_result[payment.case_name] = {
-            'prepaid_payment': payment.prepaid_payment,
-            'renew_payment': payment.renew_payment,
-            'real_prepaid_payment': payment.real_prepaid_payment,
-            'real_renew_payment': payment.real_renew_payment,
+        result[payment.case_name] = {
+            'prepaid_payment': format(payment.prepaid_payment, '.2f'),
+            'renew_payment': format(payment.renew_payment, '.2f'),
+            'real_prepaid_payment': format(payment.real_prepaid_payment, '.2f'),
+            'real_renew_payment': format(payment.real_renew_payment, '.2f'),
+            'real_payment': format(payment.real_payment, '.2f'),
+            'retail_payment': format(payment.retail_payment, '.2f'),
         }
 
     session.close()
 
-    return tax_deducted_result, non_tax_deducted_result
+    return result
 
 def getCalculatedPaymentByCase(case_name):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
@@ -1593,25 +2003,20 @@ def getCalculatedPaymentByCase(case_name):
         print('数据不存在')
         return None, None
 
-    tax_deducted_result = {}
-    non_tax_deducted_result = {}
+    result = {}
     for payment in payments:
-        tax_deducted_result[payment.year] = {
-            'prepaid_payment': payment.prepaid_payment,
-            'renew_payment': payment.renew_payment,
-            'real_prepaid_payment': payment.real_prepaid_payment * 0.94,
-            'real_renew_payment': payment.real_renew_payment * 0.94,
-        }
-        non_tax_deducted_result[payment.year] = {
-            'prepaid_payment': payment.prepaid_payment,
-            'renew_payment': payment.renew_payment,
-            'real_prepaid_payment': payment.real_prepaid_payment,
-            'real_renew_payment': payment.real_renew_payment,
+        result[payment.year] = {
+            'prepaid_payment': format(payment.prepaid_payment, '.2f'),
+            'renew_payment': format(payment.renew_payment, '.2f'),
+            'real_prepaid_payment': format(payment.real_prepaid_payment, '.2f'),
+            'real_renew_payment': format(payment.real_renew_payment, '.2f'),
+            'real_payment': format(payment.real_payment, '.2f'),
+            'retail_payment': format(payment.retail_payment, '.2f'),
         }
 
     session.close()
 
-    return tax_deducted_result, non_tax_deducted_result
+    return result
 
 def exportCalculatedPayment(path):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
@@ -1622,17 +2027,26 @@ def exportCalculatedPayment(path):
     payment_by_year = {}
     for payment in all_payments:
         if payment.case.release_time.year <= payment.year:
-            payment_by_year.setdefault(payment.year, []).append({
-                '案例标题': payment.case_name,
-                '出版年份': payment.case.release_time.year,
-                '总预付版税': payment.prepaid_payment,
-                '本年度续付版税': payment.renew_payment,
-                '总续付版税': payment.accumulated_payment,
-                '本年度实际应付预付版税': payment.real_prepaid_payment,
-                '本年度实际应付续付版税': payment.real_renew_payment,
-                '本年度实际应付预付版税（税后）': payment.real_prepaid_payment * 0.94,
-                '本年度实际应付续付版税（税后）': payment.real_renew_payment * 0.94,
-            })
+            if payment.case.owner_name == '毅伟':
+                payment_by_year.setdefault(payment.year, {}).setdefault('retail', []).append({
+                    '案例标题': payment.case_name,
+                    '出版年份': payment.case.release_time.year,
+                    '零售版税': format(payment.retail_payment, '.2f'),
+                })
+            else:
+                payment_by_year.setdefault(payment.year, {}).setdefault('royalty', []).append({
+                    '案例标题': payment.case_name,
+                    '出版年份': payment.case.release_time.year,
+                    '总预付版税': format(payment.prepaid_payment, '.2f'),
+                    '总续付版税': format(payment.accumulated_payment, '.2f'),
+                    '本年度续付版税': format(payment.renew_payment, '.2f'),
+                    '本年度应付预付版税（税后）': format(payment.real_prepaid_payment, '.2f'),
+                    '本年度应付续付版税（税后）': format(payment.real_renew_payment, '.2f'),
+                    '本年度应付金额（税后）': format(payment.real_prepaid_payment + payment.real_renew_payment, '.2f'),
+                    '是否已支付': '是' if payment.is_paid else '否',
+                    '本年度实付金额（税后）': format(payment.real_payment, '.2f'),
+                    '累积未支付（税后）': format(payment.accumulated_lack_payment, '.2f'),
+                })
         
     if not payment_by_year:
         print("没有数据需要导出")
@@ -1644,22 +2058,28 @@ def exportCalculatedPayment(path):
 
             years = sorted(payment_by_year.keys(), reverse=True)
             for year in years:
-                df = pd.DataFrame(payment_by_year[year])
+                royalty_list = payment_by_year[year].get('royalty', None)
                 # 检查 DataFrame 是否为空
-                if not df.empty:
+                if royalty_list:
                     at_least_one_sheet = True
-                    df.to_excel(writer, sheet_name=str(year), index=False)
+                    royalty_df = pd.DataFrame(royalty_list)
+                    royalty_df.to_excel(writer, sheet_name=str(year) + '-版税', index=False)
                 else:
                     # 如果某一年的数据为空，可以选择创建一个空工作表
                     df_empty = pd.DataFrame(columns=['案例标题', '出版年份', '总预付版税', '本年度续付版税', '总续付版税', 
-                                                    '本年度实际应付预付版税', '本年度实际应付续付版税', 
                                                     '本年度实际应付预付版税（税后）', '本年度实际应付续付版税（税后）'])
                     df_empty.to_excel(writer, sheet_name=str(year), index=False)
+
+                retail_list = payment_by_year[year].get('retail', None)
+                # 检查 DataFrame 是否为空
+                if retail_list:
+                    at_least_one_sheet = True
+                    retail_df = pd.DataFrame(retail_list)
+                    retail_df.to_excel(writer, sheet_name=str(year) + '-零售', index=False)
             
             # 如果没有有效的工作表，则创建一个默认的工作表
             if not at_least_one_sheet:
                 df_empty = pd.DataFrame(columns=['案例标题', '出版年份', '总预付版税', '本年度续付版税', '总续付版税', 
-                                                '本年度实际应付预付版税', '本年度实际应付续付版税', 
                                                 '本年度实际应付预付版税（税后）', '本年度实际应付续付版税（税后）'])
                 df_empty.to_excel(writer, sheet_name="默认工作表", index=False)
 
