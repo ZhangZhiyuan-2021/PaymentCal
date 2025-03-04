@@ -597,7 +597,7 @@ class ImportBrowseDownloadDataWindow(QWidget):
         paymentCalcMessages: dict = getPaymentCalculatedYear()
         years = []
         years_total_payment = {}
-        for check_year in range(2001, year):
+        for check_year in range(2016, year):
             paymentCalcMessage = paymentCalcMessages.get(check_year-1, None)
             if paymentCalcMessage is None:
                 QMessageBox.warning(self, "警告", f"年份错误！")

@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, Integer, String, DateTime, Boolean
+from sqlalchemy import Column, Integer, Float, String, DateTime, Boolean
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm import sessionmaker
@@ -83,17 +83,21 @@ class Payment(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     case_name = Column(String, ForeignKey('case.name', ondelete='CASCADE'), index=True)
     case = relationship("Case", backref="payments")
-    year = Column(Integer)
+    year = Column(Integer) # 所有的 Payment 最早从 2015 年开始建立
     views = Column(Integer)
     downloads = Column(Integer)
-    prepaid_payment = Column(Integer)
-    renew_payment = Column(Integer)
-    accumulated_payment = Column(Integer)
-    real_prepaid_payment = Column(Integer)
-    real_renew_payment = Column(Integer)
+    prepaid_payment = Column(Float)
+    renew_payment = Column(Float)
+    accumulated_payment = Column(Float)
+    real_prepaid_payment = Column(Float)
+    real_renew_payment = Column(Float)
+    real_payment = Column(Float)
+    is_paid = Column(Boolean)
+    accumulated_lack_payment = Column(Float)
+    retail_payment = Column(Float)
 
     def __repr__(self):
-        return "<Payment(id='%s', case_name='%s', year='%s', views='%s', downloads='%s', prepaid_payment='%s', renew_payment='%s', accumulated_payment='%s', real_prepaid_payment='%s', real_renew_payment='%s')>" % (self.id, self.case_name, self.year, self.views, self.downloads, self.prepaid_payment, self.renew_payment, self.accumulated_payment, self.real_prepaid_payment, self.real_renew_payment)
+        return "<Payment(id='%s', case_name='%s', year='%s', views='%s', downloads='%s', prepaid_payment='%s', renew_payment='%s', accumulated_payment='%s', real_prepaid_payment='%s', real_renew_payment='%s', real_payment='%s', is_paid='%s', accumulated_lack_payment='%s', retail_payment='%s')>" % (self.id, self.case_name, self.year, self.views, self.downloads, self.prepaid_payment, self.renew_payment, self.accumulated_payment, self.real_prepaid_payment, self.real_renew_payment, self.real_payment, self.is_paid, self.accumulated_lack_payment, self.retail_payment)
 
 class PaymentCalculatedYear(Base):
     __tablename__ = 'payment_calculated_year'
@@ -101,7 +105,7 @@ class PaymentCalculatedYear(Base):
     year = Column(Integer, primary_key=True)
     is_calculated = Column(Boolean)
     new_case_number = Column(Integer)
-    total_payment = Column(Integer)
+    total_payment = Column(Float)
 
     def __repr__(self):
         return "<PaymentCalculatedYear(year='%s', is_calculated='%s', new_case_number='%s', total_payment='%s')>" % (self.year, self.is_calculated, self.new_case_number, self.total_payment)
@@ -113,7 +117,7 @@ def init_db():
     Session = sessionmaker(bind=engine)
     session = Session()
     all_owner_names = [owner.name for owner in session.query(CopyrightOwner).all()]
-    for owner in ['清华大学经济管理学院', '中国人民大学商学院', '浙江大学管理学院']:
+    for owner in ['清华大学经济管理学院', '中国人民大学商学院', '浙江大学管理学院', '毅伟']:
         if owner not in all_owner_names:
             session.add(CopyrightOwner(name=owner))
     session.commit()
@@ -131,13 +135,12 @@ def init_db():
         2022: 688029,
         2023: 822844,
     }
-    # print(datetime.datetime.now().year + 1)
     for year in range(2000, datetime.datetime.now().year + 1):
         if year not in years_dict:
             if year < 2015:
                 session.add(PaymentCalculatedYear(year=year, is_calculated=True, new_case_number=0, total_payment=0))
             elif year in total_payments:
-                session.add(PaymentCalculatedYear(year=year, is_calculated=False, new_case_number=0, total_payment=total_payments[year]))
+                session.add(PaymentCalculatedYear(year=year, is_calculated=True, new_case_number=0, total_payment=total_payments[year]))
             else:
                 session.add(PaymentCalculatedYear(year=year, is_calculated=False, new_case_number=0, total_payment=0))
     session.commit()
