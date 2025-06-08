@@ -15,7 +15,7 @@ from src.db.init_db import CopyrightOwner, Case, BrowsingRecord, DownloadRecord,
 def readCaseList(path):
     # 读取 Excel 文件，过滤“已入库”的记录
     df = pd.read_excel(path)
-    data_dict_list = [r for r in df.to_dict(orient='records') if r.get('案例状态') == '已入库']
+    data_dict_list = [r for r in df.to_dict(orient='records') if (r.get('案例状态') == '已入库' and r.get('案例版权') != '浙江大学管理学院')]
     wrong_cases = []
 
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
