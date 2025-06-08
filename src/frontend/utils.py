@@ -147,11 +147,20 @@ def case_dict_to_widget_list(case_dict):
     if case_dict is None:
         return ""
     # 检查case_dict是否有键"错误信息"
-    if "错误信息" in case_dict:
-        case_dict['info'] = f"序号：{case_dict['序号']}\n错误信息：{case_dict['错误信息']}"
+    if '序号' not in case_dict and '发布时间' not in case_dict and '案例编号' not in case_dict:
+        # 把case_dict中的所有键值信息转换为info
+        case_dict['info'] = "\n".join([f"{key}: {value}" for key, value in case_dict.items()])
     else:
-        case_dict['info'] = f"序号：{case_dict['序号']}\n发布时间：{case_dict['发布时间']}，案例编号：{case_dict['案例编号']}"
-    case_dict['title'] = case_dict['案例标题']
+        if "错误信息" in case_dict:
+            case_dict['info'] = f"序号：{case_dict['序号']}\n错误信息：{case_dict['错误信息']}"
+        else:
+            case_dict['info'] = f"序号：{case_dict['序号']}\n发布时间：{case_dict['发布时间']}，案例编号：{case_dict['案例编号']}"
+    # case_dict['title'] = case_dict['案例标题']
+    title = None
+    for attr in case_dict:
+        if '标题' in attr:
+            title = attr
+    case_dict['title'] = case_dict.get(title, "无标题")
     return case_dict
 
 # 批量添加前端展示需要的字段

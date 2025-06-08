@@ -1461,7 +1461,7 @@ def readRealPaymentData(path):
         if len(data_dict_list) == 0:
             continue
 
-        title, payment_title, real_payment_title = None, None
+        title, payment_title, real_payment_title = None, None, None
         for attr in data_dict_list[0]:
             if '标题' in attr:
                 title = attr
