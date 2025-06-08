@@ -31,6 +31,10 @@ class ImportBrowseDownloadDataWindow(QWidget):
         self.matching_case_num = 0
         
         self.wrong_case_list_widget = None
+        
+        self.calc_thread = None
+        self.read_thread = None
+        self.thread = None
     
         # 启用事件过滤器
         self.installEventFilter(self)

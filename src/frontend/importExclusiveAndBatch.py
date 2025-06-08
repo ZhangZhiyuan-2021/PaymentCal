@@ -23,9 +23,6 @@ class ImportExclusiveAndBatchWindow(QWidget):
         self.batch = None
         
         self.matching_case_dict = {}    # 键是匹配错误的案例名，值是选择的对应的数据库中的案例名
-        self.unmatched_casename_to_class_dict_huatu = {}
-        self.unmatched_casename_to_download_record_Thu = {}
-        self.unmatched_casename_to_browse_record_Thu = {}
         self.current_unmatched_case = ""    # 当前选中的未匹配案例名
         self.unmatched_case_num = 0 
         self.matching_case_num = 0
@@ -355,9 +352,6 @@ class ImportExclusiveAndBatchWindow(QWidget):
             
     def init_list(self):
         self.matching_case_dict = {}
-        self.unmatched_casename_to_class_dict_huatu = {}
-        self.unmatched_casename_to_download_record_Thu = {}
-        self.unmatched_casename_to_browse_record_Thu = {}
         self.unmatched_case_model.update_data([])
         self.unmatched_case_model.layoutChanged.emit()
         self.current_unmatched_case = ""
