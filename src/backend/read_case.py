@@ -550,7 +550,7 @@ class ReadTsinghuaBrowsingAndDownloadThread(QThread):
                 self.progress.emit(int(current_progress + (target_progress - current_progress) * df_dict.index(data_dict) / len(df_dict)))
                 
                 # 排除系统账号
-                if data_dict.get('浏览人账号') in ['admin', 'anonymous']:
+                if data_dict.get('浏览人账号') in ['admin', 'anonymous', 'luoqiong@htxt.com.cn', 'wangxuewei@htxt.com.cn', 'lichw@sem.tsinghua.edu.cn']:
                     continue
 
                 # 检查必要字段
@@ -614,7 +614,7 @@ class ReadTsinghuaBrowsingAndDownloadThread(QThread):
             for data_dict in df_dict:
                 self.progress.emit(int(current_progress + (target_progress - current_progress) * df_dict.index(data_dict) / len(df_dict)))
                 
-                if data_dict.get('下载人账号') in ['admin', 'anonymous']:
+                if data_dict.get('下载人账号') in ['admin', 'anonymous', 'luoqiong@htxt.com.cn', 'wangxuewei@htxt.com.cn', 'lichw@sem.tsinghua.edu.cn']:   # TODO 忽略王雪伟，李承文
                     continue
 
                 if (pd.isna(data_dict.get('案例名称')) or data_dict.get('案例名称').strip() == '' or
@@ -1724,6 +1724,7 @@ class calculatePaymentThread(QThread):
         year_payment_by_year[self.years[-1]].total_payment = self.total_payment
            
         for i, year in enumerate(self.years):
+            k=0
             self.year = year
             
             if year_payment_by_year.get(int(self.year), None) and year_payment_by_year.get(int(self.year)).is_calculated:
@@ -1770,57 +1771,61 @@ class calculatePaymentThread(QThread):
             total_views = sum(payment.views for payment in all_payments if payment.year == int(self.year))
             total_downloads = sum(payment.downloads for payment in all_payments if payment.year == int(self.year))
             
-            print(f'year: {self.year}, total_views: {total_views}, total_downloads: {total_downloads}')
-            
             weight_payment = (0.35 * getattr(year_payment_by_year.get(int(self.year), object()), 'new_case_number', 0) 
                             + 0.3 * getattr(year_payment_by_year.get(int(self.year) - 1, object()), 'new_case_number', 0) 
                             + 0.2 * getattr(year_payment_by_year.get(int(self.year) - 2, object()), 'new_case_number', 0)
                             + 0.1 * getattr(year_payment_by_year.get(int(self.year) - 3, object()), 'new_case_number', 0)
                             + 0.05 * getattr(year_payment_by_year.get(int(self.year) - 4, object()), 'new_case_number', 0))
 
-            def calculatePaymentA(case):
+            def calculatePaymentA(case, k):
                 if int(self.year) - case.release_time.year == 0:
-                    return getattr(year_payment_by_year.get(int(self.year), object()), 'total_payment', 0) * 0.7 * 0.35 / weight_payment
+                    k+=0.7*0.35/weight_payment
+                    return getattr(year_payment_by_year.get(int(self.year), object()), 'total_payment', 0) * 0.7 * 0.35 / weight_payment, k
                 elif int(self.year) - case.release_time.year == 1:
-                    return getattr(year_payment_by_year.get(int(self.year), object()), 'total_payment', 0) * 0.7 * 0.3 / weight_payment
+                    k+=0.7*0.3/weight_payment
+                    return getattr(year_payment_by_year.get(int(self.year), object()), 'total_payment', 0) * 0.7 * 0.3 / weight_payment, k
                 elif int(self.year) - case.release_time.year == 2:
-                    return getattr(year_payment_by_year.get(int(self.year), object()), 'total_payment', 0) * 0.7 * 0.2 / weight_payment
+                    k+=0.7*0.2/weight_payment
+                    return getattr(year_payment_by_year.get(int(self.year), object()), 'total_payment', 0) * 0.7 * 0.2 / weight_payment, k
                 elif int(self.year) - case.release_time.year == 3:
-                    return getattr(year_payment_by_year.get(int(self.year), object()), 'total_payment', 0) * 0.7 * 0.1 / weight_payment
+                    k+=0.7*0.1/weight_payment
+                    return getattr(year_payment_by_year.get(int(self.year), object()), 'total_payment', 0) * 0.7 * 0.1 / weight_payment, k
                 elif int(self.year) - case.release_time.year == 4:
-                    return getattr(year_payment_by_year.get(int(self.year), object()), 'total_payment', 0) * 0.7 * 0.05 / weight_payment
+                    k+=0.7*0.05/weight_payment
+                    return getattr(year_payment_by_year.get(int(self.year), object()), 'total_payment', 0) * 0.7 * 0.05 / weight_payment, k
                 else:
-                    return 0
+                    return 0, k
 
             # process_views 为 1 时，按照浏览量 * 0.3 + 下载量 计算
             # process_views 为 2 时，按照浏览量开平方 + 下载量计算
-            def calculatePaymentB(payment):
+            def calculatePaymentB(payment, k):
                 if total_views + total_downloads == 0:
-                    return 0
+                    return 0, k
                 
                 if self.square_selected:
-                    return self.total_payment * 0.3 * ((payment.views * self.decimal_value) ** 0.5 + payment.downloads) / ((total_views * self.decimal_value) ** 0.5 + total_downloads) 
+                    return self.total_payment * 0.3 * ((payment.views * self.decimal_value) ** 0.5 + payment.downloads) / ((total_views * self.decimal_value) ** 0.5 + total_downloads) , k
                 else:
-                    return self.total_payment * 0.3 * (payment.views * self.decimal_value + payment.downloads) / (total_views * self.decimal_value + total_downloads)
+                    # k+=0.3 * (payment.views * self.decimal_value + payment.downloads) / (total_views * self.decimal_value + total_downloads)
+                    return self.total_payment * 0.3 * (payment.views * self.decimal_value + payment.downloads) / (total_views * self.decimal_value + total_downloads), k
 
             # self.progress.emit(int(65/len(self.years)))
             self.progress.emit(int(65 + (100-65) * i / len(self.years)))
 
-            for case in all_cases:
+            for i, case in enumerate(all_cases):
                 
                 current_progress = 65 + (100-65) * i / len(self.years) + ((100-65) / len(all_cases)) * (all_cases.index(case) / len(all_cases))
                 self.progress.emit(int(current_progress))
                 
                 payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(self.year)), None) # 由于浏览量与下载量处的统计，这里一定能查到 payment
                 if case.owner_name == '清华大学经济管理学院':
-                    A = calculatePaymentA(case)
-                    B = calculatePaymentB(payment)
+                    A, k = calculatePaymentA(case, k)
+                    B, k = calculatePaymentB(payment, k)
                     
                     if '独立开发' in case.submission_source:
                         prepaid_payment = 8000
                     elif '合作开发' in case.submission_source:
                         prepaid_payment = 4000
-                    elif '学院外' in case.submission_source:
+                    elif '学院外' in case.submission_source or '外校' in case.submission_source:
                         prepaid_payment = 5000
 
                     if not case.contain_TN or case.is_adapted_from_text:
@@ -1856,14 +1861,15 @@ class calculatePaymentThread(QThread):
                                 return
                             last_year_accumulated_payment = last_year_payment.accumulated_payment
                         payment.accumulated_payment = payment.renew_payment + last_year_accumulated_payment
+                        
                         if last_year_accumulated_payment > payment.prepaid_payment:
                             payment.real_renew_payment = payment.renew_payment
                         else:
                             payment.real_renew_payment = max(payment.accumulated_payment - payment.prepaid_payment, 0)
 
                 elif case.owner_name == '中国人民大学商学院':
-                    A = calculatePaymentA(case)
-                    B = calculatePaymentB(payment)
+                    A, k = calculatePaymentA(case, k)
+                    B, k = calculatePaymentB(payment, k)
 
                     if not case.is_exclusive:
                         A = A * 0.8
@@ -1954,12 +1960,11 @@ class calculatePaymentThread(QThread):
                     payment.real_renew_payment = 0
 
             year_payment = year_payment_by_year.get(int(self.year))
-            print(year_payment.year, year_payment.new_case_number)
             year_payment.is_calculated = True
 
         session.commit()
         session.close()
-            
+        
         self.progress.emit(100)
         self.finished.emit()
 
@@ -2040,12 +2045,14 @@ def exportCalculatedPayment(path):
                     '总预付版税': format(payment.prepaid_payment, '.2f'),
                     '总续付版税': format(payment.accumulated_payment, '.2f'),
                     '本年度续付版税': format(payment.renew_payment, '.2f'),
-                    '本年度应付预付版税（税后）': format(payment.real_prepaid_payment, '.2f'),
-                    '本年度应付续付版税（税后）': format(payment.real_renew_payment, '.2f'),
-                    '本年度应付金额（税后）': format(payment.real_prepaid_payment + payment.real_renew_payment, '.2f'),
+                    '本年度应付预付版税': format(payment.real_prepaid_payment, '.2f'),
+                    '本年度应付续付版税': format(payment.real_renew_payment, '.2f'),
+                    '本年度应付金额': format(payment.real_prepaid_payment + payment.real_renew_payment, '.2f'),
                     '是否已支付': '是' if payment.is_paid else '否',
-                    '本年度实付金额（税后）': format(payment.real_payment, '.2f'),
-                    '累积未支付（税后）': format(payment.accumulated_lack_payment, '.2f'),
+                    '本年度实付金额': format(payment.real_payment, '.2f'),
+                    '累积未支付': format(payment.accumulated_lack_payment, '.2f'),
+                    
+                    '版权：': payment.case.owner_name,
                 })
         
     if not payment_by_year:

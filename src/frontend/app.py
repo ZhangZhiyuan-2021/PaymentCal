@@ -51,7 +51,7 @@ class MatplotlibCanvas(FigureCanvas):
         self.draw()
         
     def update_data(self, case):
-        if case.tax_deducted_result is None or case.non_tax_deducted_result is None:
+        if case.payment_per_year is None:
             # 绘制文字：未计算
             self.ax.clear()
             self.ax.text(0.5, 0.5, "未计算稿酬", ha='center', va='center', fontsize=40)
@@ -66,31 +66,22 @@ class MatplotlibCanvas(FigureCanvas):
         self.ax.set_ylabel("金额", fontsize=18)
         
         # case.tax_deducted_result是个字典，找到其中最大的年份，然后往前取五年
-        for key in case.tax_deducted_result.keys():
-            print(key, type(key))
-        max_year = max(case.tax_deducted_result.keys())
+        max_year = max(case.payment_per_year.keys())
         years = np.array(range(max_year-4, max_year+1))
-        tax_deducted_values = np.array([
-            case.tax_deducted_result.get(year, 0)['real_prepaid_payment'] + case.tax_deducted_result.get(year, 0)['real_renew_payment']
-            for year in years
-        ])
-        non_tax_deducted_values = np.array([
-            case.non_tax_deducted_result.get(year, 0)['real_prepaid_payment'] + case.non_tax_deducted_result.get(year, 0)['real_renew_payment']
+        payments = np.array([
+            float(case.payment_per_year.get(year, 0)['real_prepaid_payment']) + float(case.payment_per_year.get(year, 0)['real_renew_payment'])
             for year in years
         ])
         
         self.ax.set_xticks(years)
         # 绘制两条折线
-        self.ax.plot(years, tax_deducted_values, marker='', linewidth=2, linestyle='-', color='#9b69ff', alpha=0.6, label="税前")
-        self.ax.plot(years, non_tax_deducted_values, marker='', linewidth=2, linestyle='-', color='#ff6b6b', alpha=0.6, label="税后")
+        self.ax.plot(years, payments, marker='', linewidth=2, linestyle='-', color='#9b69ff', alpha=0.6)
+        # self.ax.plot(years, non_tax_deducted_values, marker='', linewidth=2, linestyle='-', color='#ff6b6b', alpha=0.6, label="税后")
         self.ax.legend()
         
         # 在每个点的上方显示 y 轴的具体值
-        for i, value in enumerate(tax_deducted_values):
-            self.ax.annotate(f'{value}', xy=(years[i], tax_deducted_values[i]), xytext=(0, 5),
-                             textcoords='offset points', ha='center', fontsize=12)
-        for i, value in enumerate(non_tax_deducted_values):
-            self.ax.annotate(f'{value}', xy=(years[i], non_tax_deducted_values[i]), xytext=(0, 5),
+        for i, value in enumerate(payments):
+            self.ax.annotate(f'{value}', xy=(years[i], payments[i]), xytext=(0, 5),
                              textcoords='offset points', ha='center', fontsize=12)
         
         self.fig.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.15)
@@ -377,7 +368,6 @@ class MainWindow(QWidget):
         
     def on_search_clicked(self):
         search_text = self.search_bar.get_text()
-        print(f"搜索内容: {search_text}")
         
         # matched_strs, similar_cases = zip(*getSimilarCases(search_text))
         returns = getSimilarCases(search_text)
@@ -398,7 +388,9 @@ class MainWindow(QWidget):
             
         self.searched_cases: list[Case] = similar_cases
         for case in self.searched_cases:
-            case.tax_deducted_result, case.non_tax_deducted_result = getCalculatedPaymentByCase(case.name)
+            # case.tax_deducted_result, case.non_tax_deducted_result = getCalculatedPaymentByCase(case.name)
+            case.payment_per_year = getCalculatedPaymentByCase(case.name)
+            
 
         
 def app():
