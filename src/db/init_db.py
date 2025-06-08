@@ -117,7 +117,7 @@ def init_db():
     Session = sessionmaker(bind=engine)
     session = Session()
     all_owner_names = [owner.name for owner in session.query(CopyrightOwner).all()]
-    for owner in ['清华大学经济管理学院', '中国人民大学商学院', '浙江大学管理学院', '毅伟']:
+    for owner in ['清华大学经济管理学院', '中国人民大学商学院', '浙江大学管理学院', '毅伟', 'University of Virginia Darden School of Business']:
         if owner not in all_owner_names:
             session.add(CopyrightOwner(name=owner))
     session.commit()

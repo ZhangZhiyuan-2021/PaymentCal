@@ -40,6 +40,24 @@ class ImportBrowseDownloadDataWindow(QWidget):
         if event.type() == QEvent.KeyPress and event.key() == Qt.Key_Space:
             return True  # 忽略空格键事件
         return super().eventFilter(obj, event)  # 否则正常处理事件
+    
+    def closeEvent(self, event):
+        if self.calc_thread and self.calc_thread.isRunning():
+            print("等待计算线程结束...")
+            self.calc_thread.quit()
+            self.calc_thread.wait()  # 阻塞直到线程真正退出
+            print("计算线程已结束")
+        if self.read_thread and self.read_thread.isRunning():
+            print("等待读取线程结束...")
+            self.read_thread.quit()
+            self.read_thread.wait()  # 阻塞直到线程真正退出
+            print("读取线程已结束")
+        if self.thread and self.thread.isRunning():
+            print("等待线程结束...")
+            self.thread.quit()
+            self.thread.wait()  # 阻塞直到线程真正退出
+            print("线程已结束")
+        event.accept()  # 允许窗口关闭
 
     def initUI(self):
         self.setWindowTitle(" ")
@@ -158,7 +176,7 @@ class ImportBrowseDownloadDataWindow(QWidget):
         
         self.calc_year_input = QLineEdit()
         self.calc_year_input.setValidator(QIntValidator(0, 9999, self))  # 只允许输入 0-9999
-        self.calc_year_input.setPlaceholderText("结算年份,默认为今年,结算去年稿酬")
+        self.calc_year_input.setPlaceholderText("计算年份,默认为去年")
         self.calc_year_input.setStyleSheet("""
             QLineEdit {
                 border: 2px solid #D1C4E9;
@@ -204,6 +222,7 @@ class ImportBrowseDownloadDataWindow(QWidget):
         """)
         
         self.square_root_checkbox = QCheckBox("浏览量开根号")
+        self.square_root_checkbox.stateChanged.connect(self.on_checkbox_changed)
         # self.square_root_checkbox.setFixedHeight(40)
         self.square_root_checkbox.setStyleSheet("""
             QCheckBox {
@@ -277,6 +296,14 @@ class ImportBrowseDownloadDataWindow(QWidget):
         """调整遮罩层的大小以匹配窗口"""
         self.overlay.setGeometry(self.rect())
         super().resizeEvent(event)  # 确保父类的 resizeEvent 也被调用
+        
+    def on_checkbox_changed(self, state):
+        if state == Qt.Checked:
+            # decimal_input这时应该将默认值改为1
+            self.decimal_input.setPlaceholderText("浏览量折扣因子,默认为1")
+        else:
+            # decimal_input这时应该将默认值改为0.3
+            self.decimal_input.setPlaceholderText("浏览量折扣因子,默认为0.3")
         
     def on_search_clicked(self):
         """搜索按钮点击事件"""
@@ -540,11 +567,17 @@ class ImportBrowseDownloadDataWindow(QWidget):
 
             # 添加浏览记录和下载记录到数据库
             for key, value in self.unmatched_casename_to_download_record_Thu.items():
-                for case in self.matching_case_dict[key]:
-                    addDownloadRecord_Tsinghua(case, value['下载人账号'], value['下载时间'])
+                if key in self.matching_case_dict:
+                    for case in self.matching_case_dict[key]:
+                        addDownloadRecord_Tsinghua(case, value['下载人账号'], value['下载时间'])
+                else:
+                    print(f"{key} in unmatched_casename_to_download_record_Thu but not in matching_case_dict")
             for key, value in self.unmatched_casename_to_browse_record_Thu.items():
-                for case in self.matching_case_dict[key]:
-                    addBrowsingRecord_Tsinghua(case, value['浏览人账号'], value['浏览时间'])
+                if key in self.matching_case_dict:
+                    for case in self.matching_case_dict[key]:
+                        addBrowsingRecord_Tsinghua(case, value['浏览人账号'], value['浏览时间'])
+                else:
+                    print(f"{key} in unmatched_casename_to_browse_record_Thu but not in matching_case_dict")
         else:
             self.huatu_year = self.year_input.text()
             if self.huatu_year == "":
@@ -561,8 +594,11 @@ class ImportBrowseDownloadDataWindow(QWidget):
                     updateCase(value, alias=key)
                     
             for key, value in self.unmatched_casename_to_class_dict_huatu.items():
-                for case in self.matching_case_dict[key]:
-                    addBrowsingAndDownloadData_HuaTu(case, self.huatu_year, value['查看数'], value['邮件数'])
+                if key in self.matching_case_dict:
+                    for case in self.matching_case_dict[key]:
+                        addBrowsingAndDownloadData_HuaTu(case, self.huatu_year, value['查看数'], value['邮件数'])
+                else:
+                    print(f"{key} in unmatched_casename_to_class_dict_huatu but not in matching_case_dict")
             
         return None
             
@@ -580,12 +616,6 @@ class ImportBrowseDownloadDataWindow(QWidget):
             # 默认为今年
             year = datetime.datetime.now().year
             
-        decimal_value = self.decimal_input.text()
-        try:
-            decimal_value = float(decimal_value)
-        except ValueError:
-            decimal_value = 0.3
-            
         total_money = self.total_money_input.text()
         try:
             total_money = int(total_money)
@@ -597,16 +627,16 @@ class ImportBrowseDownloadDataWindow(QWidget):
         paymentCalcMessages: dict = getPaymentCalculatedYear()
         years = []
         years_total_payment = {}
-        for check_year in range(2016, year):
-            paymentCalcMessage = paymentCalcMessages.get(check_year-1, None)
+        for check_year in range(2015, year):
+            paymentCalcMessage = paymentCalcMessages.get(check_year, None)
             if paymentCalcMessage is None:
                 QMessageBox.warning(self, "警告", f"年份错误！")
                 return
             if paymentCalcMessage.get('is_calculated', False) == False:
-                years.append(check_year-1)
+                years.append(check_year)
             if paymentCalcMessage.get('contain_total_payment', False) == False:
                 years_total_payment[check_year] = 0
-        years.append(year-1)
+        years.append(year)
         
         if len(years_total_payment) > 0:
             msg_box = QMessageBox()
@@ -616,7 +646,7 @@ class ImportBrowseDownloadDataWindow(QWidget):
             msg_box.exec_()
             
             for year in years_total_payment.keys():
-                total_payment, ok = QInputDialog.getInt(self, "输入总金额", f"请输入{year}年的总金额。如今年是2025年,支付24年稿酬,则应输入25年总收入的20%", 0, 0, 999999999, 1)
+                total_payment, ok = QInputDialog.getInt(self, "输入总金额", f"请输入{year}年的总金额。这里是指{year+1}年收入的20%，用来支付{year}年的版税", 0, 0, 999999999, 1)
                 if ok:
                     years_total_payment[year] = total_payment
                     updatePaymentCalculatedYear(year, total_payment)
@@ -624,6 +654,15 @@ class ImportBrowseDownloadDataWindow(QWidget):
                     return
             
         square_root_selected = self.square_root_checkbox.isChecked()
+        
+        decimal_value = self.decimal_input.text()
+        try:
+            decimal_value = float(decimal_value)
+        except ValueError:
+            decimal_value = 0.3 if not square_root_selected else 1.0
+        if decimal_value <= 0 or decimal_value > 1:
+            QMessageBox.warning(self, "警告", "浏览量折扣因子必须在0到1之间！")
+            return
         
         self.overlay.show_loading_animation()
  
