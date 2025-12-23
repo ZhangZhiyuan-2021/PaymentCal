@@ -1581,7 +1581,7 @@ def readHistoryRealPaymentData(path):
                 real_prepaid_payment_title = attr
             if '续付' in attr:
                 real_renew_payment_title = attr
-        if not title or not real_prepaid_payment_title or not real_renew_payment_title:
+        if not title or not real_prepaid_payment_title and not real_renew_payment_title:
             print('标题或收入字段不存在，跳过表单:', sheet_name)
             continue
 
@@ -1614,10 +1614,16 @@ def readHistoryRealPaymentData(path):
                 )
                 session.add(payment)
 
-            if not (pd.isna(data_dict[real_prepaid_payment_title] or str(data_dict[real_prepaid_payment_title]).strip() == '')) and float(data_dict[real_prepaid_payment_title]) > 1e-6:
+            if pd.isna(real_prepaid_payment_title):
+                payment.real_prepaid_payment = 0
+                payment.prepaid_payment = 0
+            elif not (pd.isna(data_dict[real_prepaid_payment_title] or str(data_dict[real_prepaid_payment_title]).strip() == '')) and float(data_dict[real_prepaid_payment_title]) > 1e-6:
                 payment.real_prepaid_payment = float(data_dict[real_prepaid_payment_title])
                 payment.prepaid_payment = payment.real_prepaid_payment
-            if not (pd.isna(data_dict[real_renew_payment_title] or str(data_dict[real_renew_payment_title]).strip() == '')) and float(data_dict[real_renew_payment_title]) > 1e-6:
+            if pd.isna(real_renew_payment_title):
+                payment.real_renew_payment = 0
+                payment.renew_payment = 0
+            elif not (pd.isna(data_dict[real_renew_payment_title] or str(data_dict[real_renew_payment_title]).strip() == '')) and float(data_dict[real_renew_payment_title]) > 1e-6:
                 payment.real_renew_payment = float(data_dict[real_renew_payment_title])
                 payment.renew_payment = payment.real_renew_payment
             payment.accumulated_payment = 0
