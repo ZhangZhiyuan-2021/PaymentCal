@@ -89,15 +89,13 @@ class Payment(Base):
     prepaid_payment = Column(Float)
     renew_payment = Column(Float)
     accumulated_payment = Column(Float)
-    real_prepaid_payment = Column(Float)
-    real_renew_payment = Column(Float)
-    real_payment = Column(Float)
-    is_paid = Column(Boolean)
+    real_prepaid_payment = Column(Float) # 实际支付的预付费
+    real_renew_payment = Column(Float) # 实际支付的续费
     accumulated_lack_payment = Column(Float)
     retail_payment = Column(Float)
 
     def __repr__(self):
-        return "<Payment(id='%s', case_name='%s', year='%s', views='%s', downloads='%s', prepaid_payment='%s', renew_payment='%s', accumulated_payment='%s', real_prepaid_payment='%s', real_renew_payment='%s', real_payment='%s', is_paid='%s', accumulated_lack_payment='%s', retail_payment='%s')>" % (self.id, self.case_name, self.year, self.views, self.downloads, self.prepaid_payment, self.renew_payment, self.accumulated_payment, self.real_prepaid_payment, self.real_renew_payment, self.real_payment, self.is_paid, self.accumulated_lack_payment, self.retail_payment)
+        return "<Payment(id='%s', case_name='%s', year='%s', views='%s', downloads='%s', prepaid_payment='%s', renew_payment='%s', accumulated_payment='%s', real_prepaid_payment='%s', real_renew_payment='%s', accumulated_lack_payment='%s', retail_payment='%s')>" % (self.id, self.case_name, self.year, self.views, self.downloads, self.prepaid_payment, self.renew_payment, self.accumulated_payment, self.real_prepaid_payment, self.real_renew_payment, self.accumulated_lack_payment, self.retail_payment)
 
 class PaymentCalculatedYear(Base):
     __tablename__ = 'payment_calculated_year'
