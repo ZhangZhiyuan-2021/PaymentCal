@@ -216,9 +216,11 @@ class ImportExclusiveAndBatchWindow(QWidget):
             _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
             if _case:
                 _case["highlighted"] = False
+                
+        selected_cases = self.matching_case_dict.get(self.current_unmatched_case, [])
         for row in range(self.search_results_model.rowCount()):
             _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
-            if _case and _case["title"] in self.matching_case_dict[self.current_unmatched_case]:
+            if _case and _case["title"] in selected_cases:
                 _case["highlighted"] = True             
         self.search_results_model.layoutChanged.emit()
 
@@ -306,15 +308,29 @@ class ImportExclusiveAndBatchWindow(QWidget):
             return
         self.batch = int(self.batch)
         
-        if len(self.matching_case_dict) == self.unmatched_case_num:
-            for key, values in self.matching_case_dict.items():
-                # if value == "未匹配":
-                #     continue
-                # updateCase(value, alias=key, batch=self.batch, owner_name=self.data_source, is_exclusive=self.is_exclusive)
-                for value in values:
-                    if value == "未匹配":
-                        continue
-                    updateCase(value, alias=key, batch=self.batch, owner_name=self.data_source, is_exclusive=self.is_exclusive)
+        unmatched_all = set(
+            self.unmatched_case_model.data(
+                self.unmatched_case_model.index(row, 0),
+                Qt.DisplayRole
+            )["title"]
+            for row in range(self.unmatched_case_model.rowCount())
+        )
+        matched_keys = set(self.matching_case_dict.keys())
+        still_unmatched = unmatched_all - matched_keys
+        
+        if still_unmatched:
+            msg = "以下案例仍未进行匹配，请完成所有案例的匹配后再确认：\n\n"
+            msg += "\n".join(f"• {case}" for case in still_unmatched)
+            QMessageBox.warning(self, "未完成匹配", msg)
+            return
+        
+        for key, values in self.matching_case_dict.items():
+            for value in values:
+                if value == "未匹配":
+                    continue
+                updateCase(value, alias=key, batch=self.batch, owner_name=self.data_source, is_exclusive=self.is_exclusive)        
+                
+        QMessageBox.information(self, " ", "案例匹配成功！")
                 
         self.init_list()
         

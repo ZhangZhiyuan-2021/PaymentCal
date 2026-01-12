@@ -332,8 +332,6 @@ class ImportBrowseDownloadDataWindow(QWidget):
             if self.current_unmatched_case in self.matching_case_dict:
                 for row in range(self.search_results_model.rowCount()):
                     _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
-                    # if _case and _case["title"] == self.matching_case_dict[self.current_unmatched_case]:
-                    #     _case["highlighted"] = True     
                     # 现在将self.matching_case_dict[self.current_unmatched_case]改为一个list，存储多个匹配项
                     if _case and _case["title"] in self.matching_case_dict[self.current_unmatched_case]:
                         _case["highlighted"] = True    
@@ -366,8 +364,6 @@ class ImportBrowseDownloadDataWindow(QWidget):
         if case["title"] in self.matching_case_dict:
             for row in range(self.search_results_model.rowCount()):
                 _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
-                # if _case and _case["title"] == self.matching_case_dict[case["title"]]:
-                #     _case["highlighted"] = True        
                 # 现在将self.matching_case_dict[self.current_unmatched_case]改为一个list，存储多个匹配项
                 if _case and _case["title"] in self.matching_case_dict[case["title"]]:
                     _case["highlighted"] = True             
@@ -386,12 +382,6 @@ class ImportBrowseDownloadDataWindow(QWidget):
         if not case:
             return
         
-        # # 如果self.matching_case_dict[self.current_unmatched_case]有值，且当前index选中了同一个case，则取消匹配
-        # if self.current_unmatched_case in self.matching_case_dict and self.matching_case_dict[self.current_unmatched_case] == case["title"]:
-        #     del self.matching_case_dict[self.current_unmatched_case]
-        #     self.matching_case_num = len(self.matching_case_dict)
-        #     case["highlighted"] = False
-        #     self.search_results_model.layoutChanged.emit()
         # 现在将self.matching_case_dict[self.current_unmatched_case]改为一个list，存储多个匹配项
         if self.current_unmatched_case in self.matching_case_dict and case["title"] in self.matching_case_dict[self.current_unmatched_case]:
             self.matching_case_dict[self.current_unmatched_case].remove(case["title"])
@@ -401,8 +391,6 @@ class ImportBrowseDownloadDataWindow(QWidget):
             case["highlighted"] = False
             self.search_results_model.layoutChanged.emit()
         elif self.current_unmatched_case != "":
-            # self.matching_case_dict[self.current_unmatched_case] = case["title"] 
-            # self.matching_case_num = len(self.matching_case_dict)
             # 现在将self.matching_case_dict[self.current_unmatched_case]改为一个list，存储多个匹配项
             if self.current_unmatched_case not in self.matching_case_dict:
                 self.matching_case_dict[self.current_unmatched_case] = []
@@ -415,9 +403,11 @@ class ImportBrowseDownloadDataWindow(QWidget):
             _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
             if _case:
                 _case["highlighted"] = False
+        
+        selected_cases = self.matching_case_dict.get(self.current_unmatched_case, [])
         for row in range(self.search_results_model.rowCount()):
             _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
-            if _case and _case["title"] in self.matching_case_dict[self.current_unmatched_case]:
+            if _case and _case["title"] in selected_cases:
                 _case["highlighted"] = True             
         self.search_results_model.layoutChanged.emit()
 
@@ -550,8 +540,21 @@ class ImportBrowseDownloadDataWindow(QWidget):
         """确认按钮点击事件"""
         if len(self.matching_case_dict) == 0:
             return
-        if len(self.matching_case_dict) != self.unmatched_case_num:
-            QMessageBox.warning(self, "警告", "请先完成所有案例的匹配！")
+        
+        unmatched_all = set(
+            self.unmatched_case_model.data(
+                self.unmatched_case_model.index(row, 0),
+                Qt.DisplayRole
+            )["title"]
+            for row in range(self.unmatched_case_model.rowCount())
+        )
+        matched_keys = set(self.matching_case_dict.keys())
+        still_unmatched = unmatched_all - matched_keys
+        if still_unmatched:
+            msg = "以下案例仍未进行匹配，请完成所有案例的匹配后再确认：\n\n"
+            msg += "\n".join(f"• {case}" for case in still_unmatched)
+            QMessageBox.warning(self, "未完成匹配", msg)
+            return
               
         self.overlay.show_loading_animation()
         self.thread: LoadingUIThread = LoadingUIThread(self.update_Records)
@@ -561,9 +564,6 @@ class ImportBrowseDownloadDataWindow(QWidget):
     def update_Records(self):
         if self.data_source == "中国工商案例库":
             for key, values in self.matching_case_dict.items():
-                # if value == "未匹配":
-                #     continue
-                # updateCase(value, alias=key)
                 for value in values:
                     if value == "未匹配":
                         continue
@@ -589,9 +589,6 @@ class ImportBrowseDownloadDataWindow(QWidget):
                 return
             
             for key, values in self.matching_case_dict.items():
-                # if value == "未匹配":
-                #     continue
-                # updateCase(value, alias=key)
                 for value in values:
                     if value == "未匹配":
                         continue

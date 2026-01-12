@@ -11,6 +11,17 @@ from PyQt5.QtCore import QThread, pyqtSignal
 
 from src.db.init_db import CopyrightOwner, Case, BrowsingRecord, DownloadRecord, HuaTuData, Payment, PaymentCalculatedYear
 
+def parse_excel_float(v):
+    if v is None or pd.isna(v):
+        return None
+    s = str(v).strip()
+    if s == "":
+        return None
+    try:
+        return float(s)
+    except:
+        return None
+
 # 读案例列表
 def readCaseList(path):
     # 读取 Excel 文件，过滤“已入库”的记录
@@ -54,7 +65,7 @@ def readCaseList(path):
             continue
 
         owner_name = data_dict['案例版权']
-        if '浙江大学' in owner_name or '浙大' in owner_name:
+        if '浙江大学' in owner_name or '浙大' in owner_name or '达顿':
             continue
         owner = owner_cache.get(owner_name)
         if not owner:
@@ -63,12 +74,35 @@ def readCaseList(path):
             wrong_cases.append(data_dict)
             continue
 
-        case_title = data_dict['案例标题'].replace(' ', '').replace('　', '')
+        raw_title = str(data_dict['案例标题']).strip()          # Excel 
+        normalized_title = raw_title.replace(' ', '').replace('　', '')  # 去空格标题，仅用于匹配/作为别名
+        # case_title = data_dict['案例标题'].replace(' ', '').replace('　', '')
         submission_number = data_dict['投稿编号']
 
         # 先按案例标题查找，如不存在再按投稿编号查找
-        case = cases_by_name_and_alias.get(case_title)
+        # case = cases_by_name_and_alias.get(case_title)
+        case = cases_by_name_and_alias.get(raw_title)
+        found_by_normalized = False
+        if not case:
+            case = cases_by_name_and_alias.get(normalized_title)
+            if case:
+                found_by_normalized = True
+                
         if case:
+            # 如果是通过“去空格标题”匹配上的，那么把 Excel 中的标题作为标准标题，并把两者都加入别名
+            if found_by_normalized:
+                alias_list = json.loads(case.alias)
+                # 把原始标题和去空格标题都放进 alias
+                for t in [raw_title, normalized_title]:
+                    if t not in alias_list:
+                        alias_list.append(t)
+                case.alias = json.dumps(alias_list, ensure_ascii=False)
+                # 用 Excel 中的标题作为主标题
+                case.name = raw_title
+                # 更新缓存：保证以后既能用带空格的标题，也能用去空格标题匹配到
+                cases_by_name_and_alias[raw_title] = case
+                cases_by_name_and_alias[normalized_title] = case
+                
             case.type = data_dict.get('产品类型')
             try:
                 case.release_time = datetime.datetime.strptime(data_dict['发布时间'], "%Y-%m-%d %H:%M:%S.%f")
@@ -81,6 +115,7 @@ def readCaseList(path):
                     print("发布时间解析错误", data_dict['发布时间'])
                     wrong_cases.append(data_dict)
                     continue
+                
             for attr in data_dict_list[0]:
                 if '正文范围' in attr:
                     text_scope = data_dict.get('正文范围')
@@ -99,13 +134,16 @@ def readCaseList(path):
                     case.release_time == datetime.datetime.strptime(data_dict['发布时间'], "%Y-%m-%d %H:%M:%S.%f") and
                     case.create_time == datetime.datetime.strptime(data_dict['创建时间'], "%Y-%m-%d %H:%M:%S.%f")):
                     # 已存在的案例：更新信息
-                    print(f'案例已存在，改名并更新信息。原名：{case.name}，新名：{case_title}')
+                    print(f'案例已存在，改名并更新信息。原名：{case.name}，新名：{raw_title}')
                     # 更新 alias（别名）记录
                     alias_list = json.loads(case.alias)
-                    if case_title not in alias_list:
-                        alias_list.append(case_title)
-                    if data_dict['案例标题'] not in alias_list:
-                        alias_list.append(data_dict['案例标题'])
+                    # if case_title not in alias_list:
+                    #     alias_list.append(case_title)
+                    # if data_dict['案例标题'] not in alias_list:
+                    #     alias_list.append(data_dict['案例标题'])
+                    for t in [case.name, raw_title, normalized_title]:
+                        if t not in alias_list:
+                            alias_list.append(t)
                     case.alias = json.dumps(alias_list, ensure_ascii=False)
                     # 更新其他字段
                     case.name = data_dict['案例标题']
@@ -130,10 +168,10 @@ def readCaseList(path):
                     case.contain_TN = True if data_dict.get('是否含有教学说明') == '是' else False
                     case.is_adapted_from_text = True if data_dict.get('是否由文字案例改编') == '是' else False
                     case.owner_name = owner.name
-                    if case_title not in cases_by_name_and_alias:
-                        cases_by_name_and_alias[case_title] = case
-                    if data_dict['案例标题'] not in cases_by_name_and_alias:
-                        cases_by_name_and_alias[data_dict['案例标题']] = case
+                    
+                    # 更新缓存
+                    cases_by_name_and_alias[raw_title] = case
+                    cases_by_name_and_alias[normalized_title] = case
                     continue
         
         # 新建案例
@@ -148,15 +186,25 @@ def readCaseList(path):
                 print("发布时间解析错误", data_dict['发布时间'])
                 wrong_cases.append(data_dict)
                 continue
-        if '别名' in data_dict:
-            alias = json.dumps(list(data_dict['别名'].split('，')), ensure_ascii=False)
-        else:
-            alias = json.dumps([case_title], ensure_ascii=False)
-            if data_dict['案例标题'] != case_title:
-                alias = json.dumps([case_title, data_dict['案例标题']], ensure_ascii=False)
+            
+        alias_list = []
+        # if '别名' in data_dict:
+        #     alias = json.dumps(list(data_dict['别名'].split('，')), ensure_ascii=False)
+        # else:
+        #     alias = json.dumps([case_title], ensure_ascii=False)
+        #     if data_dict['案例标题'] != case_title:
+        #         alias = json.dumps([case_title, data_dict['案例标题']], ensure_ascii=False)
+        if '别名' in data_dict and str(data_dict['别名']).strip() != '':
+            alias_list.extend(str(data_dict['别名']).split('，'))
+        if raw_title not in alias_list:
+            alias_list.append(raw_title)
+        if normalized_title != raw_title and normalized_title not in alias_list:
+            alias_list.append(normalized_title)
+        alias = json.dumps(alias_list, ensure_ascii=False)
+        
         for attr in data_dict_list[0]:
             if '正文范围' in attr:
-                text_scope = data_dict.get('正文范围')
+                text_scope = data_dict.get(attr)
                 break
         case = Case(
             name=data_dict['案例标题'],
@@ -175,9 +223,13 @@ def readCaseList(path):
         )
         session.add(case)
         # 同时更新缓存
-        cases_by_name_and_alias[case_title] = case
-        if data_dict['案例标题'] != case_title:
-            cases_by_name_and_alias[data_dict['案例标题']] = case
+        # cases_by_name_and_alias[case_title] = case
+        # if data_dict['案例标题'] != case_title:
+        #     cases_by_name_and_alias[data_dict['案例标题']] = case
+        # cases_by_submission.setdefault(submission_number, []).append(case)
+        cases_by_name_and_alias[raw_title] = case
+        if normalized_title != raw_title:
+            cases_by_name_and_alias[normalized_title] = case
         cases_by_submission.setdefault(submission_number, []).append(case)
 
     session.commit()
@@ -216,7 +268,8 @@ def readCaseExclusiveAndBatch(path, owner_name, batch):
         for name_or_alias in name_and_alias:
             cases_by_name_and_alias[name_or_alias] = case
 
-    if '中国人民大学' in owner_name or '浙江大学' in owner_name:
+    is_exclusive = True
+    if '中国人民大学' in owner_name or '浙江大学' in owner_name or '浙大' in owner_name or '达顿' in owner_name:
         is_exclusive = False
 
     for data_dict in data_dict_list:
@@ -228,7 +281,7 @@ def readCaseExclusiveAndBatch(path, owner_name, batch):
         case_title = data_dict[title].replace(' ', '').replace('　', '')
         case = cases_by_name_and_alias.get(case_title)
         if not case:
-            print('案例不存在', case_title)
+            print('案例不存在', data_dict[title])
             wrong_cases.append(data_dict)
             continue
 
@@ -303,7 +356,7 @@ def deleteAllCopyrightOwners():
     Session = sessionmaker(bind=engine)
     session = Session()
 
-    for owner in session.query(Case).all():
+    for owner in session.query(CopyrightOwner).all():
         session.delete(owner)
     session.commit()
     session.close()
@@ -320,8 +373,8 @@ def getCase(name):
         name_and_alias = list(set(json.loads(case.alias) + [case.name]))
         for name_or_alias in name_and_alias:
             cases_by_name_and_alias[name_or_alias] = case
-    name = name.replace(' ', '').replace('　', '')
-    case = cases_by_name_and_alias.get(name)
+    normalized_name = name.replace(' ', '').replace('　', '')
+    case = cases_by_name_and_alias.get(normalized_name)
     if not case:
         print('案例不存在', name)
         return None
@@ -378,18 +431,40 @@ def updateCase(name, alias=None, submission_number=None, type=None, release_time
     for case in all_cases:
         name_and_alias = list(set(json.loads(case.alias) + [case.name]))
         for name_or_alias in name_and_alias:
+            # 原始形式
             cases_by_name_and_alias[name_or_alias] = case
-    name = name.replace(' ', '').replace('　', '')
-    case = cases_by_name_and_alias.get(name)
+            # 去掉空格的形式，也作为一个键，方便用去空格标题匹配
+            normalized = name_or_alias.replace(' ', '').replace('　', '')
+            if normalized not in cases_by_name_and_alias:
+                cases_by_name_and_alias[normalized] = case
+                
+    # name = name.replace(' ', '').replace('　', '')
+    raw_name = str(name).strip()
+    normalized_name = raw_name.replace(' ', '').replace('　', '')
+    case = cases_by_name_and_alias.get(raw_name)
+    
+    if not case:
+        case = cases_by_name_and_alias.get(normalized_name)
     if not case:
         print('案例不存在', name)
+        session.close()
         return None
 
     if alias:
+        # alias_list = json.loads(case.alias)
+        # if alias not in alias_list:
+        #     alias_list.append(alias.replace(' ', '').replace('　', ''))
+        #     case.alias = json.dumps(alias_list, ensure_ascii=False)
+        alias_raw = str(alias).strip()
+        alias_normalized = alias_raw.replace(' ', '').replace('　', '')
         alias_list = json.loads(case.alias)
-        if alias not in alias_list:
-            alias_list.append(alias.replace(' ', '').replace('　', ''))
-            case.alias = json.dumps(alias_list, ensure_ascii=False)
+        # 同时保存“原样别名”和“去空格别名”
+        if alias_raw not in alias_list:
+            alias_list.append(alias_raw)
+        if alias_normalized not in alias_list:
+            alias_list.append(alias_normalized)
+        case.alias = json.dumps(alias_list, ensure_ascii=False)
+            
     if type:
         case.type = type
     if submission_number:
@@ -402,7 +477,7 @@ def updateCase(name, alias=None, submission_number=None, type=None, release_time
         case.is_micro = True if is_micro == '是' else False
     if is_exclusive:
         case.is_exclusive = True if is_exclusive == '是' else False
-    if batch:
+    if batch is not None:
         case.batch = int(batch)
     if submission_source:
         case.submission_source = submission_source
@@ -432,20 +507,37 @@ def deleteAlias(name, alias):
     for case in all_cases:
         name_and_alias = list(set(json.loads(case.alias) + [case.name]))
         for name_or_alias in name_and_alias:
+            # 原始形式
             cases_by_name_and_alias[name_or_alias] = case
-    name = name.replace(' ', '').replace('　', '')
-    case = cases_by_name_and_alias.get(name)
+            # 去掉空格的形式
+            normalized = name_or_alias.replace(' ', '').replace('　', '')
+            if normalized not in cases_by_name_and_alias:
+                cases_by_name_and_alias[normalized] = case
+                
+    raw_name = str(name).strip()
+    normalized_name = raw_name.replace(' ', '').replace('　', '')
+    case = cases_by_name_and_alias.get(raw_name)
+    
+    if not case:
+        case = cases_by_name_and_alias.get(normalized_name)
     if not case:
         print('案例不存在', name)
+        session.close()
         return None
 
-    alias = alias.replace(' ', '').replace('　', '')
+    alias_raw = str(alias).strip()
+    alias_normalized = alias_raw.replace(' ', '').replace('　', '')
     alias_list = json.loads(case.alias)
-    if alias not in alias_list:
+
+    if alias_raw in alias_list:
+        alias_list.remove(alias_raw)
+    elif alias_normalized in alias_list:
+        alias_list.remove(alias_normalized)
+    else:
         print('别名不存在')
+        session.close()
         return None
 
-    alias_list.remove(alias)
     case.alias = json.dumps(alias_list, ensure_ascii=False)
 
     session.commit()
@@ -688,7 +780,6 @@ class ReadTsinghuaBrowsingAndDownloadThread(QThread):
         self.result.emit((missingInformationBrowsingRecords, missingInformationDownloadRecords,
             wrongBrowsingRecords, wrongDownloadRecords))
 
-# def readBrowsingAndDownloadRecord_Tsinghua(path):
 
 def addBrowsingRecord_Tsinghua(case_name, browser, datetime):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
@@ -774,7 +865,7 @@ def getBrowsingRecord(case_name, browser=None, datetime=None, is_valid=None):
         browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.browser == browser]
     if datetime:
         browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.datetime == datetime]
-    if is_valid:
+    if is_valid is not None:
         browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.is_valid == is_valid]
 
     session.close()
@@ -818,7 +909,7 @@ def deleteBrowsingRecord(case_name, browser=None, datetime=None, is_valid=None):
         browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.browser == browser]
     if datetime:
         browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.datetime == datetime]
-    if is_valid:
+    if is_valid is not None:
         browsing_records = [browsing_record for browsing_record in browsing_records if browsing_record.is_valid == is_valid]
 
     for browsing_record in browsing_records:
@@ -864,7 +955,7 @@ def getDownloadRecord(case_name, downloader=None, datetime=None, is_valid=None):
         download_records = [download_record for download_record in download_records if download_record.downloader == downloader]
     if datetime:
         download_records = [download_record for download_record in download_records if download_record.datetime == datetime]
-    if is_valid:
+    if is_valid is not None:
         download_records = [download_record for download_record in download_records if download_record.is_valid == is_valid]
 
     session.close()
@@ -908,7 +999,7 @@ def deleteDownloadRecord(case_name, downloader=None, datetime=None, is_valid=Non
         download_records = [download_record for download_record in download_records if download_record.downloader == downloader]
     if datetime:
         download_records = [download_record for download_record in download_records if download_record.datetime == datetime]
-    if is_valid:
+    if is_valid is not None:
         download_records = [download_record for download_record in download_records if download_record.is_valid == is_valid]
 
     for download_record in download_records:
@@ -1104,11 +1195,11 @@ def getHuaTuData(case_name, year=None, views=None, downloads=None):
         print('数据不存在')
         return None
 
-    if year:
+    if year is not None:
         huatu_data = [huatu_data for huatu_data in huatu_data if huatu_data.year == int(year)]
-    if views:
+    if views is not None:
         huatu_data = [huatu_data for huatu_data in huatu_data if huatu_data.views == int(views)]
-    if downloads:
+    if downloads is not None:
         huatu_data = [huatu_data for huatu_data in huatu_data if huatu_data.downloads == int(downloads)]
 
     session.close()
@@ -1153,9 +1244,9 @@ def updateHuaTuData(case_name, year, views=None, downloads=None):
         print('数据不存在')
         return None
 
-    if views:
+    if views is not None:
         huatu_data.views = int(views)
-    if downloads:
+    if downloads is not None:
         huatu_data.downloads = int(downloads)
 
     session.commit()
@@ -1185,11 +1276,11 @@ def deleteHuaTuData(case_name, year=None, views=None, downloads=None):
         print('数据不存在')
         return None
 
-    if year:
+    if year is not None:
         huatu_data = [huatu_data for huatu_data in huatu_data if huatu_data.year == int(year)]
-    if views:
+    if views is not None:
         huatu_data = [huatu_data for huatu_data in huatu_data if huatu_data.views == int(views)]
-    if downloads:
+    if downloads is not None:
         huatu_data = [huatu_data for huatu_data in huatu_data if huatu_data.downloads == int(downloads)]
 
     for huatu_data in huatu_data:
@@ -1246,16 +1337,6 @@ def exportHuaTuData(path, year=None):
     session.close()
 
 def readYiWeiData(path, year):
-    title, payment = None, None    
-    for attr in data_dict_list[0]:
-        if '标题' in attr:
-            title = attr
-        if '收入' in attr:
-            payment = attr
-    if not title or not payment:
-        print('标题或收入字段不存在')
-        return
-
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
     Session = sessionmaker(bind=engine)
     session = Session()
@@ -1276,6 +1357,19 @@ def readYiWeiData(path, year):
     # 遍历 Excel 数据，更新或新增 YiWeiData
     df = pd.read_excel(path)
     data_dict_list = df.to_dict(orient='records')
+    if not data_dict_list:
+        return [], []
+    
+    title, payment = None, None    
+    for attr in data_dict_list[0]:
+        if '标题' in attr:
+            title = attr
+        if '收入' in attr:
+            payment = attr
+    if not title or not payment:
+        print('标题或收入字段不存在')
+        return [], []
+    
     for data_dict in data_dict_list:
         # 检查必填字段
         if (pd.isna(data_dict.get(title)) or data_dict.get(title).strip() == '' or
@@ -1406,9 +1500,9 @@ def getYiWeiData(case_name=None, year=None, retail_payment=None):
         print('数据不存在')
         return None
     
-    if year:
+    if year is not None:
         yiwei_data = [yiwei_data for yiwei_data in yiwei_data if yiwei_data.year == int(year)]
-    if retail_payment:
+    if retail_payment is not None:
         yiwei_data = [yiwei_data for yiwei_data in yiwei_data if yiwei_data.retail_payment == float(retail_payment)]
 
     session.close()
@@ -1556,6 +1650,9 @@ def readHistoryRealPaymentData(path):
     engine = create_engine('sqlite:///PaymentCal.db?check_same_thread=False', echo=False)
     Session = sessionmaker(bind=engine)
     session = Session()
+    
+    missingInformationData = []
+    wrongData = []
 
     # -------------------------------
     # 预加载所有案例数据
@@ -1564,13 +1661,19 @@ def readHistoryRealPaymentData(path):
     for case in all_cases:
         name_and_alias = list(set(json.loads(case.alias) + [case.name]))
         for name_or_alias in name_and_alias:
+            # 原始形式
             cases_by_name_and_alias[name_or_alias] = case
+            # 去掉空格的形式，也作为一个键，方便使用“去空格标题”匹配
+            normalized = name_or_alias.replace(' ', '').replace('　', '')
+            if normalized not in cases_by_name_and_alias:
+                cases_by_name_and_alias[normalized] = case
 
     xls = pd.ExcelFile(path)
     for sheet_name in sorted([s for s in xls.sheet_names if s.strip().isdigit()]):
         df = pd.read_excel(xls, sheet_name=sheet_name)
         data_dict_list = df.to_dict(orient='records')
         if len(data_dict_list) == 0:
+            print('len(data_dict_list) == 0')
             continue
 
         title, real_prepaid_payment_title, real_renew_payment_title = None, None, None
@@ -1581,21 +1684,30 @@ def readHistoryRealPaymentData(path):
                 real_prepaid_payment_title = attr
             if '续付' in attr:
                 real_renew_payment_title = attr
-        if not title or not real_prepaid_payment_title and not real_renew_payment_title:
+        if not title or (not real_prepaid_payment_title and not real_renew_payment_title):
             print('标题或收入字段不存在，跳过表单:', sheet_name)
             continue
 
+        year = int(sheet_name.strip())
+
         for data_dict in data_dict_list:
-            if (pd.isna(data_dict.get(title)) or data_dict.get(title).strip() == ''):
+            raw_title = data_dict.get(title)
+            if pd.isna(raw_title) or str(raw_title).strip() == '':
+                print('标题为空')
+                missingInformationData.append(data_dict)
                 continue
+            
+            raw_title = str(raw_title).strip()
+            normalized_title = raw_title.replace(' ', '').replace('　', '')
 
-            data_dict[title] = data_dict[title].replace(' ', '').replace('　', '')
-            case = session.query(Case).filter_by(name=data_dict[title]).first()
+            case = cases_by_name_and_alias.get(raw_title)
             if not case:
-                print('案例不存在:', data_dict[title])
+                case = cases_by_name_and_alias.get(normalized_title)
+            if not case:
+                print('案例不存在:', raw_title)
+                wrongData.append(data_dict)
                 continue
 
-            year = sheet_name.strip()
             payment = next((pay for pay in case.payments if pay.year == int(year)), None)
             if not payment:
                 # 不存在，则新建，并加入 payment_dict 以便后续使用
@@ -1614,22 +1726,39 @@ def readHistoryRealPaymentData(path):
                 )
                 session.add(payment)
 
-            if pd.isna(real_prepaid_payment_title):
+            if real_prepaid_payment_title is None:
+                # 整张表没有“预付”这一列
                 payment.real_prepaid_payment = 0
                 payment.prepaid_payment = 0
-            elif not (pd.isna(data_dict[real_prepaid_payment_title] or str(data_dict[real_prepaid_payment_title]).strip() == '')) and float(data_dict[real_prepaid_payment_title]) > 1e-6:
-                payment.real_prepaid_payment = float(data_dict[real_prepaid_payment_title])
-                payment.prepaid_payment = payment.real_prepaid_payment
-            if pd.isna(real_renew_payment_title):
+            else:
+                v = parse_excel_float(data_dict.get(real_prepaid_payment_title))
+                if v is None or v <= 1e-6:
+                    payment.real_prepaid_payment = 0
+                    payment.prepaid_payment = 0
+                else:
+                    payment.real_prepaid_payment = v
+                    payment.prepaid_payment = v
+
+            # 续付
+            if real_renew_payment_title is None:
+                # 整张表没有“续付”这一列
                 payment.real_renew_payment = 0
                 payment.renew_payment = 0
-            elif not (pd.isna(data_dict[real_renew_payment_title] or str(data_dict[real_renew_payment_title]).strip() == '')) and float(data_dict[real_renew_payment_title]) > 1e-6:
-                payment.real_renew_payment = float(data_dict[real_renew_payment_title])
-                payment.renew_payment = payment.real_renew_payment
+            else:
+                v = parse_excel_float(data_dict.get(real_renew_payment_title))
+                if v is None or v <= 1e-6:
+                    payment.real_renew_payment = 0
+                    payment.renew_payment = 0
+                else:
+                    payment.real_renew_payment = v
+                    payment.renew_payment = v
+
             payment.accumulated_payment = 0
 
     session.commit()
     session.close()
+    
+    return missingInformationData, wrongData
 
 class calculatePaymentThread(QThread):
     finished = pyqtSignal()

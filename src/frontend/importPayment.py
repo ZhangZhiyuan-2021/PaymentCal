@@ -175,9 +175,11 @@ class ImportPaymentWindow(QWidget):
             _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
             if _case:
                 _case["highlighted"] = False
+                
+        selected_cases = self.matching_case_dict.get(self.current_unmatched_case, [])
         for row in range(self.search_results_model.rowCount()):
             _case = self.search_results_model.data(self.search_results_model.index(row, 0), Qt.DisplayRole)
-            if _case and _case["title"] in self.matching_case_dict[self.current_unmatched_case]:
+            if _case and _case["title"] in selected_cases:
                 _case["highlighted"] = True             
         self.search_results_model.layoutChanged.emit()
 
@@ -240,13 +242,31 @@ class ImportPaymentWindow(QWidget):
         self.overlay.timer.stop()
 
     def on_confirm_clicked(self):
-        if len(self.matching_case_dict) == self.unmatched_case_num:
-            for key, values in self.matching_case_dict.items():
-                for value in values:
-                    print(f"{key} -> {value}")
-                    if value == "未匹配":
-                        continue
-                    updateCase(value, alias=key)
+        # 找出所有未匹配的 Key
+        unmatched_all = set(
+            self.unmatched_case_model.data(
+                self.unmatched_case_model.index(row, 0),
+                Qt.DisplayRole
+            )["title"]
+            for row in range(self.unmatched_case_model.rowCount())
+        )
+        matched_keys = set(self.matching_case_dict.keys())
+        still_unmatched = unmatched_all - matched_keys
+
+        if still_unmatched:
+            msg = "以下案例仍未进行匹配，请完成所有案例的匹配后再确认：\n\n"
+            msg += "\n".join(f"• {case}" for case in still_unmatched)
+            QMessageBox.warning(self, "未完成匹配", msg)
+            return
+
+        for key, values in self.matching_case_dict.items():
+            for value in values:
+                print(f"{key} -> {value}")
+                if value == "未匹配":
+                    continue
+                updateCase(value, alias=key)
+                
+        QMessageBox.information(self, " ", "案例匹配成功！")
                 
         self.init_list()
         
@@ -295,3 +315,71 @@ class ImportPaymentWindow(QWidget):
         self.search_input.clear_text()
         self.search_results_model.update_data([])
         self.search_results_model.layoutChanged.emit()
+
+
+class ImportHistoryPaymentWindow(ImportPaymentWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("导入历史稿酬数据")
+        self.load_button.setText("读取历史数据")
+
+    def on_load_data_clicked(self):     
+        try:
+            self.init_list()
+            
+            file_path, _ = QFileDialog.getOpenFileName(
+                self, "选择历史稿酬文件", "", "Excel文件 (*.xls *.xlsx *.csv)"
+            )
+            if not file_path:
+                print("读取文件失败")
+                return
+              
+            self.overlay.show_loading_animation()
+            self.thread: LoadingUIThread = LoadingUIThread(
+                readHistoryRealPaymentData, file_path
+            )
+            self.thread.data_loaded.connect(self.readHistoryRealPaymentData_finished)
+            self.thread.start()        
+                
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"{str(e)}")
+            return
+
+    def readHistoryRealPaymentData_finished(self, returns):
+        (missingInformationData, wrongData) = returns
+        
+        if len(missingInformationData) > 0:
+            wrong_cases = cases_dict_to_widget_list(missingInformationData)
+            
+            if not self.wrong_case_list_widget:
+                self.wrong_case_list_widget = WrongCaseListWindow(wrong_cases)
+            else:
+                self.wrong_case_list_widget.close()
+                self.wrong_case_list_widget = WrongCaseListWindow(wrong_cases)
+            self.wrong_case_list_widget.show()
+            
+        elif len(wrongData) > 0:
+            msg_box = QMessageBox()
+            msg_box.setIcon(QMessageBox.Warning)
+            msg_box.setWindowTitle(" ")
+            msg_box.setText("表格中部分案例名称无法匹配，请手动匹配！")
+            msg_box.exec_()
+            
+            title = None
+            for attr in wrongData[0]:
+                if '标题' in attr:
+                    title = attr
+                    break
+                
+            unmatchedCases_Names = [case[title] for case in wrongData]
+            unmatchedCaseslist = cases_name_to_widget_list(unmatchedCases_Names)
+            
+            self.unmatched_case_model.update_data(unmatchedCaseslist)
+            self.unmatched_case_model.layoutChanged.emit()
+            self.unmatched_case_num = len(unmatchedCases_Names)
+            
+        else:
+            QMessageBox.information(self, " ", "历史数据加载成功！")
+            
+        self.overlay.setVisible(False)
+        self.overlay.timer.stop()
