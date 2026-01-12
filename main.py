@@ -1,13 +1,6 @@
 from src.backend.read_case import *
 from src.db.init_db import init_db
 from src.frontend.app import app
-from PyQt5.QtWidgets import QInputDialog
-
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine, MetaData
-from sqlalchemy.ext.declarative import declarative_base
-
-
 
 def main():
     init_db()

@@ -4,8 +4,6 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
 import datetime
 from fuzzywuzzy import process
-import sys
-import os
 
 from PyQt5.QtCore import QThread, pyqtSignal
 
