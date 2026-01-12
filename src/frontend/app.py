@@ -11,12 +11,11 @@ import numpy as np
 
 from src.frontend.caselist import get_case_list_widget
 from src.frontend.importBrowseDownloadData import ImportBrowseDownloadDataWindow
-from src.frontend.importCaseData import ImportCaseDataWindow 
 from src.frontend.searchbar import SearchBar
 from src.frontend.utils import *
 from src.frontend.wrongCaseListWidget import WrongCaseListWindow
 from src.frontend.importExclusiveAndBatch import ImportExclusiveAndBatchWindow
-from src.frontend.importPayment import ImportPaymentWindow
+from src.frontend.importPayment import ImportPaymentWindow, ImportHistoryPaymentWindow
 from src.frontend.overlayWidget import OverlayWidget
 from src.backend.read_case import *
 from src.db.init_db import init_db
@@ -174,6 +173,10 @@ class MainWindow(QWidget):
         # line2.setFrameShadow(QFrame.Sunken)
         # line2.setStyleSheet("color: #e0e0e0;")
         
+        self.import_hist_payment_button = QPushButton("导入历史稿酬数据")
+        set_button_style(self.import_hist_payment_button)
+        self.import_hist_payment_button.clicked.connect(self.import_hist_payment)
+        
         self.import_payment_button = QPushButton("导入稿酬数据")
         set_button_style(self.import_payment_button)
         self.import_payment_button.clicked.connect(self.import_payment)
@@ -199,7 +202,7 @@ class MainWindow(QWidget):
         button_layout.addWidget(self.otherSchool_button)
         button_layout.addWidget(self.import_bd_button)
         button_layout.addWidget(line)
-        # button_layout.addWidget(line2)
+        button_layout.addWidget(self.import_hist_payment_button)
         button_layout.addWidget(self.import_payment_button)
         button_layout.addWidget(self.export_payment_button)
         button_layout.addWidget(line3)
@@ -283,6 +286,10 @@ class MainWindow(QWidget):
     def import_payment(self):
         self.import_payment_window = ImportPaymentWindow()
         self.import_payment_window.show()
+        
+    def import_hist_payment(self):
+        self.import_hist_payment_window = ImportHistoryPaymentWindow()
+        self.import_hist_payment_window.show()
         
     def import_other_school(self):    
         self.import_other_school_window = ImportExclusiveAndBatchWindow()
