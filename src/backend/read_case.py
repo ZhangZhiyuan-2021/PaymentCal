@@ -19,6 +19,24 @@ def parse_excel_float(v):
         return float(s)
     except:
         return None
+    
+def parse_dt(v):
+    if pd.isna(v):
+        raise ValueError("时间为空")
+    try:
+        dt = pd.to_datetime(v)
+        if isinstance(dt, pd.Timestamp):
+            return dt.to_pydatetime()
+        return dt
+    except Exception:
+        # 兜底：如果非标准格式再尝试你原来那几种 format
+        s = str(v).strip()
+        for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
+            try:
+                return datetime.datetime.strptime(s, fmt)
+            except Exception:
+                pass
+        raise
 
 # 读案例列表
 def readCaseList(path):
@@ -52,11 +70,17 @@ def readCaseList(path):
     # 遍历 Excel 中的每条记录
     for data_dict in data_dict_list:
         # 检查必填字段
-        if (pd.isna(data_dict.get('案例标题')) or data_dict.get('案例标题').strip() == '' or
-            pd.isna(data_dict.get('投稿编号')) or str(data_dict.get('投稿编号')).strip() == '' or
-            pd.isna(data_dict.get('案例版权')) or data_dict.get('案例版权').strip() == '' or
-            pd.isna(data_dict.get('发布时间')) or data_dict.get('发布时间').strip() == '' or
-            pd.isna(data_dict.get('创建时间')) or data_dict.get('创建时间').strip() == ''):
+        title_val = data_dict.get('案例标题')
+        sub_no_val = data_dict.get('投稿编号')
+        owner_val = data_dict.get('案例版权')
+        release_val = data_dict.get('发布时间')
+        create_val = data_dict.get('创建时间')
+
+        if (pd.isna(title_val) or str(title_val).strip() == '' or
+            pd.isna(sub_no_val) or str(sub_no_val).strip() == '' or
+            pd.isna(owner_val) or str(owner_val).strip() == '' or
+            pd.isna(release_val) or str(release_val).strip() == '' or
+            pd.isna(create_val) or str(create_val).strip() == ''):
             print('案例标题、投稿编号、案例版权、发布时间、创建时间不能为空')
             data_dict['错误信息'] = '案例标题、投稿编号、案例版权、发布时间、创建时间不能为空'
             wrong_cases.append(data_dict)
@@ -101,18 +125,14 @@ def readCaseList(path):
                 cases_by_name_and_alias[raw_title] = case
                 cases_by_name_and_alias[normalized_title] = case
                 
-            case.type = data_dict.get('产品类型')
+            case.type = data_dict.get('产品类型', '文字')
             try:
-                case.release_time = datetime.datetime.strptime(data_dict['发布时间'], "%Y-%m-%d %H:%M:%S.%f")
-                case.create_time = datetime.datetime.strptime(data_dict['创建时间'], "%Y-%m-%d %H:%M:%S.%f")
+                case.release_time = parse_dt(data_dict['发布时间'])
+                case.create_time = parse_dt(data_dict['创建时间'])
             except Exception:
-                try:
-                    case.release_time = datetime.datetime.strptime(data_dict['发布时间'], "%Y-%m-%d %H:%M:%S")
-                    case.create_time = datetime.datetime.strptime(data_dict['创建时间'], "%Y-%m-%d %H:%M:%S")
-                except Exception as e:
-                    print("发布时间解析错误", data_dict['发布时间'])
-                    wrong_cases.append(data_dict)
-                    continue
+                print("发布时间解析错误", data_dict['发布时间'])
+                wrong_cases.append(data_dict)
+                continue
                 
             for attr in data_dict_list[0]:
                 if '正文范围' in attr:
@@ -666,9 +686,13 @@ class ReadTsinghuaBrowsingAndDownloadThread(QThread):
                     continue
 
                 # 检查必要字段
-                if (pd.isna(data_dict.get('案例名称')) or data_dict.get('案例名称').strip() == '' or
-                    pd.isna(data_dict.get('浏览人账号')) or data_dict.get('浏览人账号').strip() == '' or
-                    pd.isna(data_dict.get('浏览时间')) or data_dict.get('浏览时间').strip() == ''):
+                name_val = data_dict.get('案例名称')
+                browser_val = data_dict.get('浏览人账号')
+                time_val = data_dict.get('浏览时间')
+
+                if (pd.isna(name_val) or str(name_val).strip() == '' or
+                    pd.isna(browser_val) or str(browser_val).strip() == '' or
+                    pd.isna(time_val) or str(time_val).strip() == ''):
                     print('案例名称、浏览人账号、浏览时间不能为空')
                     missingInformationBrowsingRecords.append(data_dict)
                     continue
@@ -680,15 +704,18 @@ class ReadTsinghuaBrowsingAndDownloadThread(QThread):
                     print('案例不存在', data_dict['案例名称'])
                     wrongBrowsingRecords.append(data_dict)
                     continue
-                # 新增：如果是浙大 / 达顿的案例，忽略该浏览记录
+                # 新增：如果是浙大的案例，忽略该浏览记录
                 if ('浙江大学' in case.owner_name 
-                        or '浙大' in case.owner_name 
-                        or '达顿' in case.owner_name):
+                        or '浙大' in case.owner_name):
+                        # or '达顿' in case.owner_name):
                     continue
 
                 # 解析浏览时间（仅解析一次）
                 try:
-                    browsing_dt = datetime.datetime.strptime(data_dict['浏览时间'], "%Y-%m-%d %H:%M:%S")
+                    browsing_dt = pd.to_datetime(data_dict['浏览时间'])
+                    # 转成 Python 的 datetime，方便后面比较
+                    if isinstance(browsing_dt, pd.Timestamp):
+                        browsing_dt = browsing_dt.to_pydatetime()
                 except Exception as e:
                     print(f"日期解析错误: {data_dict['浏览时间']}")
                     missingInformationBrowsingRecords.append(data_dict)
@@ -734,11 +761,15 @@ class ReadTsinghuaBrowsingAndDownloadThread(QThread):
                 if data_dict.get('下载人账号') in ['admin', 'anonymous', 'luoqiong@htxt.com.cn', 'wangxuewei@htxt.com.cn', 'lichw@sem.tsinghua.edu.cn']:   # 忽略王雪伟，李承文
                     continue
 
-                if (pd.isna(data_dict.get('案例名称')) or data_dict.get('案例名称').strip() == '' or
-                    pd.isna(data_dict.get('下载人账号')) or data_dict.get('下载人账号').strip() == '' or
-                    pd.isna(data_dict.get('下载时间')) or data_dict.get('下载时间').strip() == ''):
-                    print('案例名称、下载人账号、下载时间不能为空')
-                    missingInformationDownloadRecords.append(data_dict)
+                name_val = data_dict.get('案例名称')
+                browser_val = data_dict.get('浏览人账号')
+                time_val = data_dict.get('浏览时间')
+
+                if (pd.isna(name_val) or str(name_val).strip() == '' or
+                    pd.isna(browser_val) or str(browser_val).strip() == '' or
+                    pd.isna(time_val) or str(time_val).strip() == ''):
+                    print('案例名称、浏览人账号、浏览时间不能为空')
+                    missingInformationBrowsingRecords.append(data_dict)
                     continue
 
                 data_dict['案例名称'] = data_dict['案例名称'].replace(' ', '').replace('　', '')
@@ -747,14 +778,16 @@ class ReadTsinghuaBrowsingAndDownloadThread(QThread):
                     print('案例不存在', data_dict['案例名称'])
                     wrongDownloadRecords.append(data_dict)
                     continue
-                # 新增：如果是浙大 / 达顿的案例，忽略该下载记录
+                # 新增：如果是浙大的案例，忽略该下载记录
                 if ('浙江大学' in case.owner_name 
-                        or '浙大' in case.owner_name 
-                        or '达顿' in case.owner_name):
+                        or '浙大' in case.owner_name):
+                        # or '达顿' in case.owner_name):
                     continue
 
                 try:
-                    download_dt = datetime.datetime.strptime(data_dict['下载时间'], "%Y-%m-%d %H:%M:%S")
+                    download_dt = pd.to_datetime(data_dict['下载时间'])
+                    if isinstance(download_dt, pd.Timestamp):
+                        download_dt = download_dt.to_pydatetime()
                 except Exception as e:
                     print(f"日期解析错误: {data_dict['下载时间']}")
                     missingInformationDownloadRecords.append(data_dict)
@@ -1790,10 +1823,10 @@ class calculatePaymentThread(QThread):
         self.progress.emit(int(2))
         
         for case in all_cases:
-            #新增：如果是浙大 / 达顿的案例，忽略该下载记录
+            #新增：如果是浙大的案例，忽略该下载记录
             if ('浙江大学' in case.owner_name 
-                    or '浙大' in case.owner_name 
-                    or '达顿' in case.owner_name):
+                    or '浙大' in case.owner_name): 
+                    # or '达顿' in case.owner_name):
                 continue
             
             current_progress = 2 + (50-2) * all_cases.index(case) / len(all_cases)
@@ -1960,7 +1993,7 @@ class calculatePaymentThread(QThread):
                 self.progress.emit(int(current_progress))
                 
                 payment = next((pay for pay in payment_by_case.get(case.name) if pay.year == int(self.year)), None) # 由于浏览量与下载量处的统计，这里一定能查到 payment
-                if case.owner_name == '清华大学经济管理学院':
+                if case.owner_name == '清华大学经济管理学院' or case.owner_name == '达顿商学院':
                     A, k = calculatePaymentA(case, k)
                     B, k = calculatePaymentB(payment, k)
                     
@@ -2008,6 +2041,10 @@ class calculatePaymentThread(QThread):
                             payment.renew_payment = renew_payment
                         else:
                             payment.renew_payment = max(payment.accumulated_payment - prepaid_payment, 0)
+                            
+                    # 达顿不发预付，其余与清华相同
+                    if case.owner_name == '达顿商学院':
+                        payment.prepaid_payment = 0
 
                 elif case.owner_name == '中国人民大学商学院':
                     A, k = calculatePaymentA(case, k)
@@ -2142,12 +2179,12 @@ def getCalculatedPaymentByCase(case_name):
     case = session.query(Case).filter_by(name=case_name).first()
     if not case:
         print('案例不存在')
-        return None, None
+        return None
     
     payments = case.payments
     if not payments:
         print('数据不存在')
-        return None, None
+        return None
 
     result = {}
     for payment in payments:
