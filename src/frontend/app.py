@@ -1,3 +1,4 @@
+import os
 import sys
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, QHBoxLayout,
@@ -245,6 +246,13 @@ class MainWindow(QWidget):
         ''')
         
         self.overlay = OverlayWidget(self)
+        
+        # 弹窗提示注意事项
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Warning)
+        msg_box.setWindowTitle("需要的字段：")
+        msg_box.setText("案例文档列表需要字段：\n案例标题、投稿编号、案例版权、发布时间、创建时间、案例状态、正文范围、投稿来源、是否含有教学说明")
+        msg_box.exec_()
         
     def resizeEvent(self, event):
         """调整遮罩层的大小以匹配窗口"""
