@@ -4,8 +4,6 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
 import datetime
 from fuzzywuzzy import process
-import sys
-import os
 
 from PyQt5.QtCore import QThread, pyqtSignal
 
@@ -65,8 +63,8 @@ def readCaseList(path):
             continue
 
         owner_name = data_dict['案例版权']
-        if '浙江大学' in owner_name or '浙大' in owner_name or '达顿':
-            continue
+        # if '浙江大学' in owner_name or '浙大' in owner_name or '达顿':
+        #     continue
         owner = owner_cache.get(owner_name)
         if not owner:
             print('版权方不存在', owner_name)
@@ -682,6 +680,11 @@ class ReadTsinghuaBrowsingAndDownloadThread(QThread):
                     print('案例不存在', data_dict['案例名称'])
                     wrongBrowsingRecords.append(data_dict)
                     continue
+                # 新增：如果是浙大 / 达顿的案例，忽略该浏览记录
+                if ('浙江大学' in case.owner_name 
+                        or '浙大' in case.owner_name 
+                        or '达顿' in case.owner_name):
+                    continue
 
                 # 解析浏览时间（仅解析一次）
                 try:
@@ -743,6 +746,11 @@ class ReadTsinghuaBrowsingAndDownloadThread(QThread):
                 if not case:
                     print('案例不存在', data_dict['案例名称'])
                     wrongDownloadRecords.append(data_dict)
+                    continue
+                # 新增：如果是浙大 / 达顿的案例，忽略该下载记录
+                if ('浙江大学' in case.owner_name 
+                        or '浙大' in case.owner_name 
+                        or '达顿' in case.owner_name):
                     continue
 
                 try:
@@ -1782,6 +1790,12 @@ class calculatePaymentThread(QThread):
         self.progress.emit(int(2))
         
         for case in all_cases:
+            #新增：如果是浙大 / 达顿的案例，忽略该下载记录
+            if ('浙江大学' in case.owner_name 
+                    or '浙大' in case.owner_name 
+                    or '达顿' in case.owner_name):
+                continue
+            
             current_progress = 2 + (50-2) * all_cases.index(case) / len(all_cases)
             self.progress.emit(int(current_progress))
             

@@ -1,7 +1,7 @@
 import sys
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QVBoxLayout, QHBoxLayout,
-    QFrame, QFileDialog, QMessageBox, QInputDialog
+    QFrame, QFileDialog, QMessageBox
 )
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import Qt, QEvent
@@ -173,9 +173,9 @@ class MainWindow(QWidget):
         # line2.setFrameShadow(QFrame.Sunken)
         # line2.setStyleSheet("color: #e0e0e0;")
         
-        self.import_hist_payment_button = QPushButton("导入历史稿酬数据")
-        set_button_style(self.import_hist_payment_button)
-        self.import_hist_payment_button.clicked.connect(self.import_hist_payment)
+        # self.import_hist_payment_button = QPushButton("导入历史稿酬数据")
+        # set_button_style(self.import_hist_payment_button)
+        # self.import_hist_payment_button.clicked.connect(self.import_hist_payment)
         
         self.import_payment_button = QPushButton("导入稿酬数据")
         set_button_style(self.import_payment_button)
@@ -202,7 +202,7 @@ class MainWindow(QWidget):
         button_layout.addWidget(self.otherSchool_button)
         button_layout.addWidget(self.import_bd_button)
         button_layout.addWidget(line)
-        button_layout.addWidget(self.import_hist_payment_button)
+        # button_layout.addWidget(self.import_hist_payment_button)
         button_layout.addWidget(self.import_payment_button)
         button_layout.addWidget(self.export_payment_button)
         button_layout.addWidget(line3)

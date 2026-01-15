@@ -24,3 +24,11 @@ data/
 
 *.xls
 *.xlsx
+
+build/
+
+dist/
+
+main.spec
+
+venv_paymentcal/
