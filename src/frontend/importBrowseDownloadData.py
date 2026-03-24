@@ -614,8 +614,8 @@ class ImportBrowseDownloadDataWindow(QWidget):
         try:
             year = int(year)
         except ValueError:
-            # 默认为今年
-            year = datetime.datetime.now().year
+            # 默认为去年
+            year = datetime.datetime.now().year - 1
             
         total_money = self.total_money_input.text()
         try:
@@ -626,18 +626,26 @@ class ImportBrowseDownloadDataWindow(QWidget):
         
         # 获取往年是否被计算过，确保过去每年都被计算过
         paymentCalcMessages: dict = getPaymentCalculatedYear()
-        years = []
+        # years = []
+        # years_total_payment = {}
+        # for check_year in range(2015, year):
+        #     paymentCalcMessage = paymentCalcMessages.get(check_year, None)
+        #     if paymentCalcMessage is None:
+        #         QMessageBox.warning(self, "警告", f"年份错误！")
+        #         return
+        #     if paymentCalcMessage.get('is_calculated', False) == False:
+        #         years.append(check_year)
+        #     if paymentCalcMessage.get('contain_total_payment', False) == False:
+        #         years_total_payment[check_year] = 0
+        # years.append(year)
         years_total_payment = {}
         for check_year in range(2015, year):
             paymentCalcMessage = paymentCalcMessages.get(check_year, None)
             if paymentCalcMessage is None:
-                QMessageBox.warning(self, "警告", f"年份错误！")
+                QMessageBox.warning(self, "警告", f"年份 {check_year} 缺少 PaymentCalculatedYear 记录！")
                 return
-            if paymentCalcMessage.get('is_calculated', False) == False:
-                years.append(check_year)
             if paymentCalcMessage.get('contain_total_payment', False) == False:
                 years_total_payment[check_year] = 0
-        years.append(year)
         
         if len(years_total_payment) > 0:
             msg_box = QMessageBox()
@@ -664,6 +672,8 @@ class ImportBrowseDownloadDataWindow(QWidget):
         if decimal_value <= 0 or decimal_value > 1:
             QMessageBox.warning(self, "警告", "浏览量折扣因子必须在0到1之间！")
             return
+        
+        years = list(range(2015, year + 1))
         
         self.overlay.show_loading_animation()
  

@@ -59,7 +59,23 @@ class ImportPaymentWindow(QWidget):
         set_button_style(self.load_button, 40)
         self.load_button.clicked.connect(self.on_load_data_clicked)
         
-        top_layout.addWidget(self.load_button)
+        self.calc_year_input = QLineEdit()
+        self.calc_year_input.setValidator(QIntValidator(0, 9999, self))  # 只允许输入 0-9999
+        self.calc_year_input.setPlaceholderText("导入年份，默认为去年（例如今年是26年，导入25年的数据）")
+        self.calc_year_input.setStyleSheet("""
+            QLineEdit {
+                border: 2px solid #D1C4E9;
+                border-radius: 8px;
+                padding: 6px;
+                background-color: white;
+            }
+            QLineEdit:focus {
+                border: 2px solid #7b56f0;
+            }
+        """)
+        
+        top_layout.addWidget(self.load_button, 3)
+        top_layout.addWidget(self.calc_year_input, 3)
     
         unmatch_label = QLabel("下方列表中的案例无法自动匹配。请按照下列步骤操作：\n1. 选择左侧列表中某个案例；\n2. 在右侧搜索框中输入关键词搜索匹配的案例；\n3. 选择右侧列表中的案例；\n4. 所有案例手动选择完成后，点击确认按钮。")
         unmatch_label.setFont(font2)
@@ -191,9 +207,16 @@ class ImportPaymentWindow(QWidget):
             if not file_path:
                 print("读取文件失败")
                 return
+            
+            year = self.calc_year_input.text().strip()
+            try:
+                year = int(year)
+            except ValueError:
+                # 默认为去年
+                year = datetime.datetime.now().year - 1
               
             self.overlay.show_loading_animation()
-            self.thread: LoadingUIThread = LoadingUIThread(readRealPaymentData, file_path)
+            self.thread: LoadingUIThread = LoadingUIThread(readRealPaymentData, file_path, year)
             self.thread.data_loaded.connect(self.readRealPaymentData_finfished)
             self.thread.start()        
                 
