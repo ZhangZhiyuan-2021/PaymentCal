@@ -1701,10 +1701,10 @@ def readRealPaymentData(path, year):
             payment.real_renew_payment = real_renew_payment
 
         # 规则：
-        # 1) 只要当年有实发（预付或续付任一 > 0），就认为历史欠款结清，
+        # 1) 只要当年有实发（续付 > 0），就认为历史欠款结清，
         #    当年的 accumulated_lack_payment 记为 0
         # 2) 如果当年应发却没发，则累计 = 上年累计欠款 + 当年应发预付 + 当年应发续付
-        if payment.real_prepaid_payment > 1e-6 or payment.real_renew_payment > 1e-6:
+        if payment.real_renew_payment > 1e-6:
             payment.accumulated_lack_payment = 0
         else:
             last_year_payment = next((pay for pay in case.payments if pay.year == int(year) - 1), None)
@@ -1825,8 +1825,8 @@ def readHistoryRealPaymentData(path):
                 payment.renew_payment = 0
                 
             # 欠款逻辑：
-            # 只要该年有任何实发（预付或续付），就认为历史欠款结清
-            if payment.real_prepaid_payment > 1e-6 or payment.real_renew_payment > 1e-6:
+            # 只要该年有任何实发（续付），就认为历史欠款结清
+            if payment.real_renew_payment > 1e-6:
                 payment.accumulated_lack_payment = 0
                 payment.accumulated_payment = 8001
             else:
@@ -1930,7 +1930,46 @@ class calculatePaymentThread(QThread):
 
             return 0
 
-        return 0    
+        return 0
+    
+    def _get_normal_prepaid_payment(self, case):
+        """
+        非浙大案例的“首年预付版税”
+        这里只算规则金额，不判断是否是首年。
+        """
+        owner_name = case.owner_name or ""
+
+        if owner_name == '清华大学经济管理学院':
+            prepaid_payment = 0
+
+            submission_source = case.submission_source or ""
+            if '独立开发' in submission_source:
+                prepaid_payment = 8000
+            elif '合作开发' in submission_source:
+                prepaid_payment = 4000
+            elif '学院外' in submission_source or '外校' in submission_source:
+                prepaid_payment = 5000
+            else:
+                # submission_source 缺失时，不跳过整条逻辑，仅预付按 0 处理
+                prepaid_payment = 0
+
+            if (not case.contain_TN) or case.is_adapted_from_text:
+                prepaid_payment = prepaid_payment * 0.5
+
+            return prepaid_payment
+
+        elif owner_name == '中国人民大学商学院':
+            prepaid_payment = 2000 if case.is_micro else 4000
+            return prepaid_payment
+
+        elif owner_name == '达顿商学院':
+            return 0
+
+        elif self._is_zju_case(case):
+            return 0
+
+        else:
+            return 0  
         
     def run(self):
         # 判断清华记录有效性（浏览和下载分别处理）
@@ -2246,10 +2285,10 @@ class calculatePaymentThread(QThread):
 
                         payment.accumulated_payment = renew_payment + last_year_accumulated_payment
 
-                        if last_year_accumulated_payment > prepaid_payment:
+                        if last_year_accumulated_payment > self._get_normal_prepaid_payment(case):
                             payment.renew_payment = renew_payment
                         else:
-                            payment.renew_payment = max(payment.accumulated_payment - prepaid_payment, 0)
+                            payment.renew_payment = max(payment.accumulated_payment - self._get_normal_prepaid_payment(case), 0)
                             
                     sum_A[case.owner_name] += A
                     sum_B[case.owner_name] += B
@@ -2340,10 +2379,10 @@ class calculatePaymentThread(QThread):
 
                         payment.accumulated_payment = renew_payment + last_year_accumulated_payment
 
-                        if last_year_accumulated_payment > prepaid_payment:
+                        if last_year_accumulated_payment > self._get_normal_prepaid_payment(case):
                             payment.renew_payment = renew_payment
                         else:
-                            payment.renew_payment = max(payment.accumulated_payment - prepaid_payment, 0)
+                            payment.renew_payment = max(payment.accumulated_payment - self._get_normal_prepaid_payment(case), 0)
                             
                     sum_A[case.owner_name] += A
                     sum_B[case.owner_name] += B
